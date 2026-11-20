@@ -2,7 +2,7 @@
 //
 // The same list, in the same order, as the other particledots plugins (copied from the Ceo plugin's
 // engine/include/ceo/Scales.h, which came from the Beads plugin). Each scale is the set of semitones above its root.
-// In PEDWAR the root is the Key menu's note (Pitch Snap arrives in milestone 3).
+// In PEDWAR a scale is built around the note a filter plays, in the Key menu's key (see Pitch.h).
 //
 // The engine works with a 12-bit mask: bit n is set when "n semitones above the root" is a note of the scale.
 // Header only, no dependencies.

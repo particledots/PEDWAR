@@ -61,7 +61,7 @@ namespace
     juce::String percent (float v, int)  { return juce::String (juce::roundToInt (v * 100.0f)) + "%"; }
     juce::String bipolar (float v, int)  { const int p = juce::roundToInt (v * 100.0f); return (p > 0 ? "+" : "") + juce::String (p) + "%"; }
     juce::String centsText (float v, int) { const int c = juce::roundToInt (v); return (c > 0 ? "+" : "") + juce::String (c) + " ct"; }
-    juce::String qText (float v, int)    { return juce::String (v, v < 9.95f ? 1 : 0); }
+    juce::String qText (float v, int)    { return v < 9.95f ? juce::String (v, 1) : juce::String (juce::roundToInt (v)); }
     juce::String morphText (float v, int)
     {
         // Left to right: LP end, x4, x2, x1 (the notch), x1/2, x1/4, HP (or BP) end. See pedwar::morphWeights.
@@ -93,7 +93,9 @@ juce::String hzText (float hz)
     static const char* const noteNames[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
     const int note = juce::roundToInt (69.0f + 12.0f * std::log2 (juce::jmax (1.0f, hz) / 440.0f));
     const juce::String name = juce::String (noteNames[((note % 12) + 12) % 12]) + juce::String (note / 12 - 1);
-    if (hz < 1000.0f) return name + " " + juce::String (hz, hz < 100.0f ? 1 : 0) + " Hz";
+    // (juce::String with 0 decimals would print every digit, so whole hertz are rounded first)
+    if (hz < 100.0f) return name + " " + juce::String (hz, 1) + " Hz";
+    if (hz < 1000.0f) return name + " " + juce::String (juce::roundToInt (hz)) + " Hz";
     return name + " " + juce::String (hz / 1000.0f, hz < 10000.0f ? 2 : 1) + " kHz";
 }
 
@@ -141,7 +143,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     addFloat (l, offset, "Offset", juce::NormalisableRange<float> (-1.0f, 1.0f, 0.0f), 0.0f,
               [] (float v, int) { const float st = offsetSemitones (v);
                                   if (std::fabs (st) < 0.05f) return juce::String ("0 st");
-                                  return (st > 0.0f ? "+" : "") + juce::String (st, std::fabs (st) < 9.95f ? 1 : 0) + " st"; });
+                                  return (st > 0.0f ? "+" : "") + (std::fabs (st) < 9.95f ? juce::String (st, 1) : juce::String (juce::roundToInt (st))) + " st"; });
     addChoice (l, pitchSplit, "Pitch gamma-delta", { "All", "Split" }, 0);
     addFloat (l, lfoRate, "Rate", logRange (0.01f, 20.0f), 0.2f, rateText);
     for (int f = 0; f < numFilters; ++f)

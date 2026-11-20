@@ -1,7 +1,7 @@
 // PEDWAR engine: every setting the engine reads. Plain values, no plugin code.
 //
 // The list matches the plugin's full parameter list, which was fixed in the first build (milestone 1) so that saved
-// projects never change. Settings marked "M3" are stored but not used yet.
+// projects never change. Since milestone 3 every setting is used.
 
 #pragma once
 
@@ -19,7 +19,7 @@ namespace pedwar
     enum MorphEnds { EndsLpHp = 0, EndsBp = 1 };
     enum BusRow { BusWidth = 0, BusFm = 1, BusAnim = 2 };
     enum PitchSplit { SplitAll = 0, SplitSplit = 1 };
-    enum StereoMode { StereoSum = 0, StereoUber = 1 };     // M3
+    enum StereoMode { StereoSum = 0, StereoUber = 1 };
 
     // The plugin's default settings that Link measures the leading filter's knobs from (alpha leads beta, delta leads
     // gamma): turning the leader's knob away from its default moves the follower by the same amount.
@@ -77,8 +77,8 @@ namespace pedwar
         float lfoRate = 0.2f;                  // Hz (the alpha LFO; the others run at fixed ratios to it)
         int bus[kNumFilters] = {};             // BusRow per LFO
 
-        int stereoMode = StereoSum;            // M3
-        int snap = 0, scale = 0, key = 0;      // M3: Pitch Snap (Off / Semitones / Steps), Scale (Off + 28), Key (C..B)
-        int quality = 1;                       // M3: 0 = 2x, 1 = 4x, 2 = 8x (fixed at 4x until then)
+        int stereoMode = StereoSum;            // sum / uber (Engine.h)
+        int snap = 0, scale = 0, key = 0;      // Pitch Snap (Off / Semitones / Steps), Scale (Off + 28), Key (C..B): Pitch.h
+        int quality = 1;                       // 0 = 2x, 1 = 4x, 2 = 8x oversampling
     };
 } // namespace pedwar

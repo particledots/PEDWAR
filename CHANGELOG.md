@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.0 — milestone 3 (built 2026-11-20; waiting for the Logic test)
+
+- **Stereo sum / über**: über sends α's and β's right sides (the width all-pass blend) to the left output and γ's and
+  δ's left sides to the right, +4 dB so it is about as loud as sum; cross-faded over 20 ms.
+- **Pitch snap** Off / Semis / Steps, **Scale** (Off + 28) and **Key**: COMPLICATOR's quantizer, on each filter's
+  Coarse + Fine, as an interval from C4 (key tracking's reference); a scale works around the note played. Key
+  tracking, Offset, Link and the LFOs are added after it. The Coarse readout shows the snapped note.
+- **Quality** 2x / 4x / 8x ("8x heavy", amber while chosen): fade out 4 ms, switch, fade in; the same latency at every
+  Quality (a small delay at the project rate evens them out).
+- **Presets**: Init plus 14 factory presets, level matched to Init within 0.3 dB (K-weighted), none peaking above
+  0.95; none touches Pitch Snap, Scale, Key or Quality. The menu remembers the choice; projects from before 0.3.0
+  show "Custom".
+- **Polish**: milestone 3 controls live, M3 tags removed; Coarse, Q and Offset readouts rounded (no more
+  "277.183 Hz"); the latency reported to Logic is exact (it was about ¾ of a sample too long).
+- No control ids changed and no saved-setting entries added. Projects saved with 0.1.x / 0.2.0 open with the same
+  settings and the same sound, with the Preset menu showing "Custom".
+- Checks: engine self-test 460 (new: latency equal and measured at every Quality and sample rate, responses, Osc level
+  and pitch and Res at 2x and 8x, aliasing falling with Quality, every Quality switch without a click and with pitch
+  and level kept, quick back-and-forth switching; über routing, level and phase, loudness against sum, no click;
+  Snap Off unchanged on 1000 random settings, Semis, Steps, scales, keys, key tracking, Link, Offset, glide; every
+  preset's level, peak, ranges, and playing at 2x / 8x and 44.1 / 96 kHz; random automation now also of Stereo, Snap,
+  Scale, Key and Quality); plugin-layer check 229 (PEDWAR) and 218 (PEDWAR Synth) (new: Init = the engine's defaults,
+  every preset sets exactly its settings and leaves the player's four alone, the choice saved and restored, a 0.2.0
+  project shows Custom with its settings unchanged, every preset plays through the plugin, all 73 panel controls
+  live, the Preset menu, "8x heavy", the snapped Coarse readout, the rounded readouts).
+
 ## 0.2.0 — milestone 2 (built 2026-11-20, run 44757759235; tested in Logic on both Macs, works)
 
 - **Morph** and **Morph ends**: the stereo morph signal is the filter's notch moved to ×4 … ×¼ of the cutoff (left

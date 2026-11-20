@@ -72,14 +72,54 @@ pedwar::Params PedwarAudioProcessor::readParams() const
     return P;
 }
 
+void PedwarAudioProcessor::applyParams (const pedwar::Params& P)
+{
+    namespace D = PdParams;      // (the members masterLimit, linkAB ... would hide the ids)
+    auto set = [this] (const char* pid, float value)
+    {
+        if (auto* p = apvts.getParameter (pid))
+            p->setValueNotifyingHost (p->convertTo0to1 (value));
+    };
+    auto flag = [] (bool b) { return b ? 1.0f : 0.0f; };
+    for (int f = 0; f < D::numFilters; ++f)
+    {
+        const auto& o = P.f[f];
+        set (D::id (f, D::Mode), (float) o.mode);       set (D::id (f, D::Gain), o.gainDb);       set (D::id (f, D::InLimit), flag (o.inLimit));
+        set (D::id (f, D::Coarse), o.coarseHz);         set (D::id (f, D::Fine), o.fineCents);    set (D::id (f, D::Q), o.q);
+        set (D::id (f, D::OutLimit), flag (o.outLimit)); set (D::id (f, D::KeyTrack), flag (o.keyTrack));
+        set (D::id (f, D::Tap), (float) o.tap);         set (D::id (f, D::Strike), flag (o.strike));
+        set (D::id (f, D::FmAmt), o.fmAmt);             set (D::id (f, D::Morph), o.morph);       set (D::id (f, D::MorphEnds), (float) o.morphEnds);
+        set (D::id (f, D::Width), o.width);             set (D::id (f, D::Level), o.levelDb);
+    }
+    set (D::masterLimit, flag (P.masterLimit));
+    set (D::linkAB, flag (P.linkAB));  set (D::linkGD, flag (P.linkGD));
+    set (D::offset, P.offset);         set (D::pitchSplit, (float) P.pitchSplit);  set (D::lfoRate, P.lfoRate);
+    for (int f = 0; f < D::numFilters; ++f) set (D::busIds[f], (float) P.bus[f]);
+    set (D::stereoMode, (float) P.stereoMode);
+    // never: pitchSnap, pitchScale, pitchKey, quality (the player's own set-up)
+}
+
 void PedwarAudioProcessor::setCurrentProgram (int index)
 {
-    // Init: every control back to its default, except the player's Pitch Snap, Scale, Key and Quality.
-    for (auto* base : getParameters())
-        if (auto* p = dynamic_cast<juce::RangedAudioParameter*> (base))
-            if (! isPlayersSetting (p->paramID))
-                p->setValueNotifyingHost (p->getDefaultValue());
-    programIndex = juce::jlimit (0, getNumPrograms() - 1, index);
+    index = juce::jlimit (0, getNumPrograms() - 1, index);
+    if (index == 0)
+    {
+        // Init: every control back to its default, except the player's Pitch Snap, Scale, Key and Quality.
+        for (auto* base : getParameters())
+            if (auto* p = dynamic_cast<juce::RangedAudioParameter*> (base))
+                if (! isPlayersSetting (p->paramID))
+                    p->setValueNotifyingHost (p->getDefaultValue());
+    }
+    else
+        applyParams (pedwar::presets::factory (index - 1));
+    programIndex = index;
+    presetShown = index;
+}
+
+const juce::String PedwarAudioProcessor::getProgramName (int index)
+{
+    if (index == 0) return "Init";
+    return pedwar::presets::name (index - 1);
 }
 
 void PedwarAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
@@ -184,7 +224,7 @@ juce::AudioProcessorEditor* PedwarAudioProcessor::createEditor()
 void PedwarAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
-    state.setProperty ("preset", programIndex.load(), nullptr);       // the Preset menu's entry (0 = Init)
+    state.setProperty ("preset", presetShown.load(), nullptr);       // the Preset menu's entry (0 = Init, -1 = Custom)
     if (auto xml = state.createXml())
     {
         xml->setAttribute ("pluginVersion", JucePlugin_VersionString);
@@ -199,7 +239,14 @@ void PedwarAudioProcessor::setStateInformation (const void* data, int sizeInByte
         {
             const auto tree = juce::ValueTree::fromXml (*xml);
             apvts.replaceState (tree);
-            programIndex = tree.hasProperty ("preset") ? juce::jlimit (0, getNumPrograms() - 1, (int) tree["preset"]) : 0;
+            // Before 0.3.0 the Preset menu had Init only and the entry was always 0, whatever the settings: shown as
+            // "Custom". From 0.3.0 the entry is the preset last chosen (-1 = Custom).
+            const auto version = juce::StringArray::fromTokens (xml->getStringAttribute ("pluginVersion"), ".", "");
+            const bool before030 = version.size() < 2 || (version[0].getIntValue() == 0 && version[1].getIntValue() < 3);
+            int shown = tree.hasProperty ("preset") ? (int) tree["preset"] : -1;
+            if (before030 || shown < -1 || shown >= getNumPrograms()) shown = -1;
+            presetShown = shown;
+            programIndex = juce::jmax (0, shown);
         }
 }
 

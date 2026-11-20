@@ -21,8 +21,6 @@ namespace PdStyle
     inline juce::Colour soft()       { return juce::Colour (0xFF9D9B93); }   // secondary
     inline juce::Colour muted()      { return juce::Colour (0xFF6E6D67); }
     inline juce::Colour master()     { return juce::Colour (0xFFB4B2A9); }
-    inline juce::Colour tagM2()      { return juce::Colour (0xFF534AB7); }
-    inline juce::Colour tagM3()      { return juce::Colour (0xFF854F0B); }
 
     inline juce::Colour filterColour (int f)
     {
@@ -30,7 +28,7 @@ namespace PdStyle
         return juce::Colour (c[f & 3]);
     }
 
-    inline constexpr float dimAlpha = 0.28f;        // controls that arrive in a later milestone
+    inline constexpr float dimAlpha = 0.28f;        // a control that is switched off (none since milestone 3)
 
     // The panel is designed at 680 x 612 units (the draft's size) and scaled to the window.
     inline constexpr int panelW = 680;

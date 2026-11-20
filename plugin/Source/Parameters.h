@@ -31,11 +31,11 @@ namespace PdParams
     inline constexpr const char* pitchSplit  = "pitchSplit";
     inline constexpr const char* lfoRate     = "lfoRate";
     extern const char* const busIds[numFilters];               // "busA" "busB" "busG" "busD"
-    inline constexpr const char* stereoMode  = "stereoMode";   // M3
-    inline constexpr const char* pitchSnap   = "pitchSnap";    // M3
-    inline constexpr const char* pitchScale  = "pitchScale";   // M3
-    inline constexpr const char* pitchKey    = "pitchKey";     // M3
-    inline constexpr const char* quality     = "quality";      // M3
+    inline constexpr const char* stereoMode  = "stereoMode";
+    inline constexpr const char* pitchSnap   = "pitchSnap";
+    inline constexpr const char* pitchScale  = "pitchScale";
+    inline constexpr const char* pitchKey    = "pitchKey";
+    inline constexpr const char* quality     = "quality";
 
     extern const float defaultCoarse[numFilters];              // 110, 220, 440, 1760 Hz (= pedwar::kDefaultCoarseHz)
 

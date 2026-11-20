@@ -6,19 +6,12 @@ using namespace PdParams;
 namespace
 {
     constexpr float kDefaultScale = 1.15f;         // opens at about 780 x 700
-    constexpr int kLiveMilestone = 2;              // controls of this milestone and earlier work; later ones are dimmed
+    constexpr int kLiveMilestone = 3;              // controls of this milestone and earlier work (all of them now)
     constexpr int kMasterX = 504, kMasterW = 168;
     int columnX (int f) { return 8 + f * 124; }
 
     const char* const kLetters[4] = { "\xce\xb1", "\xce\xb2", "\xce\xb3", "\xce\xb4" };
     const char* const kNames[4] = { "alpha", "beta", "gamma", "delta" };
-
-    void tag (juce::Graphics& g, float x, float y, int m)
-    {
-        g.setColour (m == 2 ? tagM2() : tagM3());
-        g.fillRoundedRectangle (x, y, 26.0f, 15.0f, 3.0f);
-        textAt (g, m == 2 ? "M2" : "M3", x + 13.0f, y + 11.0f, juce::Colours::white, 11.0f);
-    }
 
     void dashedLine (juce::Graphics& g, float x0, float x1, float y, juce::Colour c)
     {
@@ -35,13 +28,25 @@ PedwarPanel::PedwarPanel (PedwarAudioProcessor& p) : proc (p)
     setLookAndFeel (&lnf);
     auto& st = proc.getValueTreeState();
 
-    // Top bar (M3): the Preset menu and the Quality menu.
-    presetMenu.addItem ("Init", 1);
-    presetMenu.setSelectedId (1, juce::dontSendNotification);
+    // Top bar: the Preset menu (Init + the factory presets) and the Quality menu.
+    presetMenu.setName ("Preset");
+    for (int i = 0; i < proc.getNumPrograms(); ++i)
+        presetMenu.addItem (proc.getProgramName (i), i + 1);
     presetMenu.setBounds (318, 15, 140, 20);
     addAndMakeVisible (presetMenu);
-    later (presetMenu, 3);
-    menu (quality, 466, 15, 70, 3);
+    presetMenu.onChange = [this]
+    {
+        const int sel = presetMenu.getSelectedId();
+        if (sel > 0)
+        {
+            proc.setCurrentProgram (sel - 1);
+            updatePresetMenu();
+        }
+    };
+    updatePresetMenu();
+    qualityMenu = &menu (quality, 466, 15, 70, 3);
+    qualityMenu->changeItemText (3, "8x heavy");          // 8x runs everything at 8 times the project rate: CPU-hungry
+    updateQualityMenu();
 
     // The four filters
     for (int f = 0; f < numFilters; ++f)
@@ -53,7 +58,22 @@ PedwarPanel::PedwarPanel (PedwarAudioProcessor& p) : proc (p)
         segs (id (f, Mode), { "Filter", "Res", "Osc" }, c, x0 + 8, 101, 102, {}, 1);
         knob (f, Gain, cx - 30, 158, 11, "gain", 1);
         segs (id (f, InLimit), { "off", "tanh" }, c, (int) cx + 6, 149, 48, "in limit", 1);
-        auto& coarse = knob (f, Coarse, cx - 17, 232, 20, "coarse", 1, [] (float v) { return hzText (v); });
+        // Coarse readout: the frequency; while Pitch Snap or Scale is on, the note the knobs really play (Coarse + Fine,
+        // snapped; before key tracking, Offset and Link).
+        auto* fineP = st.getRawParameterValue (id (f, Fine));
+        auto* snapP = st.getRawParameterValue (pitchSnap);
+        auto* scaleP = st.getRawParameterValue (pitchScale);
+        auto* keyP = st.getRawParameterValue (pitchKey);
+        auto& coarse = knob (f, Coarse, cx - 17, 232, 20, "coarse", 1, [fineP, snapP, scaleP, keyP] (float v)
+        {
+            const int sn = juce::roundToInt (snapP->load()), sc = juce::roundToInt (scaleP->load()), k = juce::roundToInt (keyP->load());
+            if (! pedwar::pitch::active (sn, sc)) return hzText (v);
+            pedwar::FilterParams fp;
+            fp.coarseHz = v;
+            fp.fineCents = fineP->load();
+            return hzText (pedwar::Engine::knobHz (fp, sn, sc, k));
+        });
+        coarseKnobs.push_back (&coarse);
         knob (f, Fine, cx + 36, 222, 9, "fine", 1);
         auto& q = knob (f, Q, cx - 28, 312, 14, "Q", 1);
 
@@ -216,6 +236,49 @@ void PedwarPanel::timerCallback()
     }
     if (changed)
         repaint (0, 80, kMasterX, 16);
+    // Menus and readouts that follow other controls
+    if (proc.shownPreset() != shownPresetId) updatePresetMenu();
+    if (qualityMenu != nullptr && juce::roundToInt (proc.getValueTreeState().getRawParameterValue (quality)->load()) != shownQuality)
+        updateQualityMenu();
+    const int sn = snapState();
+    if (sn != shownSnap)
+    {
+        shownSnap = sn;
+        for (auto* k : coarseKnobs) k->repaint();
+    }
+}
+
+void PedwarPanel::updatePresetMenu()
+{
+    const int shown = proc.shownPreset();
+    if (shown >= 0)
+        presetMenu.setSelectedId (shown + 1, juce::dontSendNotification);
+    else
+    {
+        presetMenu.setSelectedId (0, juce::dontSendNotification);
+        presetMenu.setText ("Custom", juce::dontSendNotification);   // settings from a project saved before 0.3.0
+    }
+    shownPresetId = shown;
+}
+
+// 8x is marked "heavy" in the list, and the menu's text turns amber while it is chosen.
+void PedwarPanel::updateQualityMenu()
+{
+    const int q = juce::roundToInt (proc.getValueTreeState().getRawParameterValue (quality)->load());
+    qualityMenu->setColour (juce::ComboBox::textColourId, q == 2 ? filterColour (3) : text());
+    qualityMenu->repaint();
+    shownQuality = q;
+}
+
+int PedwarPanel::snapState() const
+{
+    auto& st = proc.getValueTreeState();
+    auto i = [&st] (const char* pid) { return juce::roundToInt (st.getRawParameterValue (pid)->load()); };
+    int h = i (pitchSnap) * 4096 + i (pitchScale) * 32 + i (pitchKey);
+    if (pedwar::pitch::active (i (pitchSnap), i (pitchScale)))
+        for (int f = 0; f < numFilters; ++f)
+            h = h * 31 + juce::roundToInt (st.getRawParameterValue (id (f, Fine))->load() * 10.0f);
+    return h;
 }
 
 void PedwarPanel::paint (juce::Graphics& g)
@@ -273,16 +336,8 @@ void PedwarPanel::paint (juce::Graphics& g)
     textAt (g, "master", mx + 12.0f, 76.0f, text(), 13.0f, Align::left);
     textAt (g, "modulation", mx + 12.0f, 184.0f, text(), 11.0f, Align::left);
     textAt (g, "levels", mx + 12.0f, 282.0f, text(), 11.0f, Align::left);
-    textAt (g, "pitch snap", mx + 12.0f, 470.0f, text().withAlpha (dimAlpha), 11.0f, Align::left);
+    textAt (g, "pitch snap", mx + 12.0f, 470.0f, text(), 11.0f, Align::left);
     textAt (g, "MIDI in: strike + key track", mx + (float) kMasterW * 0.5f, 550.0f, muted(), 11.0f);
-}
-
-void PedwarPanel::paintOverChildren (juce::Graphics& g)
-{
-    // Milestone tags (not dimmed), where the draft has them. Milestone 2's controls work now, so only M3 is left.
-    tag (g, 318, 1, 3);
-    tag (g, (float) (kMasterX + 54), 402, 3);
-    tag (g, (float) (kMasterX + kMasterW - 34), 458, 3);
 }
 
 // ================================================================================================ editor

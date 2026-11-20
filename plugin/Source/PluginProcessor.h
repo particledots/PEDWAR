@@ -10,6 +10,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <pedwar/Engine.h>
+#include <pedwar/Presets.h>
 #include "Parameters.h"
 
 #ifndef PEDWAR_SYNTH
@@ -38,13 +39,16 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 5.0; }   // a high-Q ring at the bottom of the range
 
-    // Programs = the Preset menu. Milestone 1 has "Init" only (every control at its default except Pitch Snap, Scale,
-    // Key and Quality); the factory presets arrive in milestone 3. The choice is stored with the project from now on.
-    int getNumPrograms() override { return 1; }
+    // Programs = the Preset menu: 0 is "Init" (every control at its default), then the factory presets (engine
+    // Presets.h). Neither ever touches Pitch Snap, Scale, Key or Quality. The choice is stored with the project.
+    int getNumPrograms() override { return 1 + pedwar::presets::kNumFactory; }
     int getCurrentProgram() override { return programIndex.load(); }
     void setCurrentProgram (int) override;
-    const juce::String getProgramName (int) override { return "Init"; }
+    const juce::String getProgramName (int) override;
     void changeProgramName (int, const juce::String&) override {}
+    // For the panel: the program last chosen (0 = Init), or -1 ("Custom") for a project saved before 0.3.0, when the
+    // Preset menu had Init only and did not say what the settings were.
+    int shownPreset() const { return presetShown.load(); }
 
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
@@ -56,8 +60,9 @@ public:
 private:
     static BusesProperties makeBuses();
     void handleMidi (const juce::MidiMessage&);
+    void applyParams (const pedwar::Params&);      // every control except Pitch Snap, Scale, Key and Quality
 
-    std::atomic<int> programIndex { 0 };
+    std::atomic<int> programIndex { 0 }, presetShown { 0 };
     juce::AudioProcessorValueTreeState apvts;
     pedwar::Engine engine;
     std::vector<float> trackMono, sideMono, outL, outR;

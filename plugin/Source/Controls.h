@@ -37,6 +37,7 @@ public:
     void setModulation (ModSource s) { modSource = std::move (s); refreshModulation(); }
     void refreshModulation();                  // called by the panel's timer; repaints when the ring has moved
     Modulation shownModulation() const { return mod; }
+    juce::String readoutText() const;          // the value shown under the knob
 
 private:
     ModSource modSource;

@@ -3,11 +3,13 @@
 //   1. The list of controls is exactly the one fixed in 0.1.0 (same ids, order, ranges, defaults, menu lists), the
 //      same for both plugins, so saved projects and automation keep working for good.
 //   2. Saved settings come back exactly (save, load into a fresh plugin); the Preset entry is stored.
-//   3. Init resets every control except Pitch Snap, Scale, Key and Quality.
+//   3. Init resets every control except Pitch Snap, Scale, Key and Quality; every factory preset sets exactly its
+//      settings and leaves those four alone; the Preset menu's choice is saved, and a project from before 0.3.0 shows
+//      "Custom".
 //   4. Audio through processBlock: track input, side chain, MIDI strikes and key tracking, the bus layouts Logic uses,
 //      the latency.
-//   5. The panel opens at the draft's proportions, every control is there, milestone 3 controls are dimmed, the
-//      modulation rings follow the LFOs.
+//   5. The panel opens at the draft's proportions, every control is there and live, the modulation rings follow the
+//      LFOs, the Preset and Quality menus, the snapped Coarse readout.
 //   6. Heavy random automation through the parameters stays finite and bounded.
 //
 // The build workflow runs both programs on every push and fails if any check fails.
@@ -148,7 +150,7 @@ static void testState()
     }
     CHECK (notDefault == 0, "Init: %d controls not at their default", notDefault);
     CHECK (playersKept == 4, "Init leaves Pitch Snap, Scale, Key and Quality alone (%d of 4)", playersKept);
-    CHECK (b.getNumPrograms() == 1 && b.getProgramName (0) == "Init", "Preset menu: Init");
+    CHECK (b.getNumPrograms() == 1 + pedwar::presets::kNumFactory && b.getProgramName (0) == "Init", "Preset menu: Init + %d", pedwar::presets::kNumFactory);
 
     // A state from an unknown future version with an extra entry still loads
     PedwarAudioProcessor c;
@@ -207,6 +209,95 @@ struct Rig
         return all;
     }
 };
+
+// ------------------------------------------------------------------------------------------------ 3b. presets
+
+static bool sameParams (const pedwar::Params& a, const pedwar::Params& b, bool withPlayers, juce::String& what)
+{
+    auto near = [] (float x, float y) { return std::fabs (x - y) <= 1.0e-3f * std::max (1.0f, std::fabs (x)); };
+    for (int f = 0; f < 4; ++f)
+    {
+        const auto& x = a.f[f]; const auto& y = b.f[f];
+        if (x.mode != y.mode || ! near (x.gainDb, y.gainDb) || x.inLimit != y.inLimit || ! near (x.coarseHz, y.coarseHz)
+            || ! near (x.fineCents, y.fineCents) || ! near (x.q, y.q) || x.outLimit != y.outLimit || x.keyTrack != y.keyTrack
+            || x.tap != y.tap || x.strike != y.strike || ! near (x.fmAmt, y.fmAmt) || ! near (x.morph, y.morph)
+            || x.morphEnds != y.morphEnds || ! near (x.width, y.width) || ! near (x.levelDb, y.levelDb))
+        { what = "filter " + juce::String (f); return false; }
+    }
+    if (a.masterLimit != b.masterLimit || a.linkAB != b.linkAB || a.linkGD != b.linkGD || ! near (a.offset, b.offset)
+        || a.pitchSplit != b.pitchSplit || ! near (a.lfoRate, b.lfoRate) || a.stereoMode != b.stereoMode)
+    { what = "master"; return false; }
+    for (int j = 0; j < 4; ++j) if (a.bus[j] != b.bus[j]) { what = "bus"; return false; }
+    if (withPlayers && (a.snap != b.snap || a.scale != b.scale || a.key != b.key || a.quality != b.quality)) { what = "players"; return false; }
+    return true;
+}
+
+static void testPresets()
+{
+    using namespace PdParams;
+    PedwarAudioProcessor p;
+    juce::String what;
+    // Init = the engine's own list of defaults
+    p.setCurrentProgram (0);
+    CHECK (sameParams (p.readParams(), pedwar::presets::init(), true, what), "Init = presets::init() (%s)", what.toRawUTF8());
+    // every preset: exactly its settings, the player's Pitch Snap, Scale, Key and Quality untouched
+    for (int i = 1; i < p.getNumPrograms(); ++i)
+    {
+        setReal (p, pitchSnap, (float) (i % 3)); setReal (p, pitchScale, (float) (i * 2 % 29));
+        setReal (p, pitchKey, (float) (i % 12)); setReal (p, quality, (float) ((i + 1) % 3));
+        const auto before = p.readParams();
+        p.setCurrentProgram (i);
+        const auto now = p.readParams();
+        CHECK (sameParams (now, pedwar::presets::factory (i - 1), false, what), "preset %d sets its settings (%s)", i, what.toRawUTF8());
+        CHECK (now.snap == before.snap && now.scale == before.scale && now.key == before.key && now.quality == before.quality,
+               "preset %d leaves Pitch Snap, Scale, Key and Quality alone", i);
+        CHECK (p.getProgramName (i) == juce::String (pedwar::presets::name (i - 1)) && p.getProgramName (i).isNotEmpty(), "preset %d name", i);
+        CHECK (p.getCurrentProgram() == i && p.shownPreset() == i, "preset %d shown", i);
+    }
+    // the choice is saved with the project and comes back (even after a knob has moved)
+    p.setCurrentProgram (5);
+    setReal (p, id (0, Q), 7.0f);
+    juce::MemoryBlock block;
+    p.getStateInformation (block);
+    PedwarAudioProcessor q;
+    q.setStateInformation (block.getData(), (int) block.getSize());
+    CHECK (q.shownPreset() == 5 && q.getCurrentProgram() == 5, "preset choice restored (%d)", q.shownPreset());
+    CHECK (std::fabs (realValue (q.getValueTreeState().getParameter (id (0, Q))) - 7.0f) < 1e-3f, "moved knob restored");
+    // a project saved by 0.2.0 (always "preset 0", whatever the settings): shown as Custom, settings unchanged
+    {
+        auto xml = juce::AudioProcessor::getXmlFromBinary (block.getData(), (int) block.getSize());
+        xml->setAttribute ("pluginVersion", "0.2.0");
+        xml->setAttribute ("preset", 0);
+        juce::MemoryBlock old;
+        juce::AudioProcessor::copyXmlToBinary (*xml, old);
+        PedwarAudioProcessor r;
+        r.setStateInformation (old.getData(), (int) old.getSize());
+        CHECK (r.shownPreset() == -1, "0.2.0 project: Custom (%d)", r.shownPreset());
+        CHECK (sameParams (r.readParams(), q.readParams(), true, what), "0.2.0 project: settings exactly as saved (%s)", what.toRawUTF8());
+        juce::MemoryBlock again;
+        r.getStateInformation (again);
+        PedwarAudioProcessor s2;
+        s2.setStateInformation (again.getData(), (int) again.getSize());
+        CHECK (s2.shownPreset() == -1, "Custom stays Custom after saving again");
+    }
+    // every preset plays through processBlock (pink-ish noise in, middle C)
+    for (int i = 1; i < p.getNumPrograms(); ++i)
+    {
+        Rig r (true);
+        r.proc.setCurrentProgram (i);
+        long pos = 0;
+        std::mt19937 g (3);
+        std::uniform_real_distribution<float> u (-0.2f, 0.2f);
+        juce::MidiBuffer midi;
+        midi.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+        auto o = r.run (512, pos, [&] (long) { return u (g); }, [&] (long) { return u (g); }, midi);
+        pos += 512;
+        auto rest = r.runFor (1.0, [&] (long) { return u (g); }, [&] (long) { return u (g); }, pos);
+        float pk = 0.0f; double ms = 0.0; bool fin = true;
+        for (float x : rest) { fin = fin && std::isfinite (x); pk = std::max (pk, std::fabs (x)); ms += (double) x * x; }
+        CHECK (fin && pk < 1.5f && ms > 1e-3, "preset %d (%s) plays through the plugin (peak %.2f)", i, p.getProgramName (i).toRawUTF8(), pk);
+    }
+}
 
 static double toneAmp (const std::vector<float>& v, double hz, double sr, size_t from)
 {
@@ -392,6 +483,84 @@ static void testMilestone2()
         CHECK (m->getText (0.5f, 20) == x + "1" && m->getText (0.1f, 20) == x + "4" && m->getText (0.9f, 20) == x + juce::String::fromUTF8 ("\xc2\xbc"),
                "Morph readout x4 .. x1 .. x1/4 (%s)", m->getText (0.1f, 20).toRawUTF8());
         CHECK (m->getText (0.0f, 20) == "LP" && m->getText (1.0f, 20) == "HP / BP", "Morph readout at the ends");
+        // readouts never print a long row of digits (milestone 3 fix)
+        auto* q = p.getValueTreeState().getParameter (id (0, Q));
+        auto* c = p.getValueTreeState().getParameter (id (0, Coarse));
+        auto* o = p.getValueTreeState().getParameter (offset);
+        CHECK (q->getText (q->convertTo0to1 (23.456f), 20) == "23" && q->getText (q->convertTo0to1 (2.345f), 20) == "2.3", "Q readout (%s)", q->getText (q->convertTo0to1 (23.456f), 20).toRawUTF8());
+        CHECK (c->getText (c->convertTo0to1 (277.183f), 20) == "C#4 277 Hz" && c->getText (c->convertTo0to1 (1234.5f), 20) == "D#6 1.23 kHz", "Coarse readout (%s)", c->getText (c->convertTo0to1 (277.183f), 20).toRawUTF8());
+        CHECK (o->getText (o->convertTo0to1 (0.7f), 20) == "+16 st", "Offset readout (%s)", o->getText (o->convertTo0to1 (0.7f), 20).toRawUTF8());
+    }
+}
+
+// ------------------------------------------------------------------------------------------------ 4c. milestone 3
+
+static void testMilestone3()
+{
+    using namespace PdParams;
+    // Quality through the plugin: Logic's latency stays put, the sound carries on at the new Quality
+    {
+        Rig r (false);
+        for (int k = 0; k < numFilters; ++k) setReal (r.proc, id (k, Level), k == 0 ? 0.0f : -60.0f);
+        setReal (r.proc, id (0, Mode), 2.0f);
+        setReal (r.proc, id (0, Tap), 1.0f);
+        setReal (r.proc, id (0, Coarse), 300.0f);
+        setReal (r.proc, id (0, KeyTrack), 0.0f);
+        const int lat = r.proc.getLatencySamples();
+        long pos = 0;
+        r.runFor (0.5, nullptr, nullptr, pos);
+        for (float q : { 2.0f, 0.0f, 1.0f })
+        {
+            setReal (r.proc, quality, q);
+            auto o = r.runFor (0.5, nullptr, nullptr, pos);
+            double ms = 0.0;
+            for (size_t i = o.size() / 2; i < o.size(); ++i) ms += (double) o[i] * o[i];
+            const double amp = std::sqrt (2.0 * ms / (double) (o.size() / 2));
+            CHECK (r.proc.getEngine().oversamplingFactor() == (2 << (int) q), "Quality %.0f reaches the engine", q);
+            CHECK (std::fabs (amp - 0.5) < 0.06, "Quality %.0f: the Osc filter carries on (%.3f)", q, amp);
+            CHECK (r.proc.getLatencySamples() == lat, "Quality %.0f: latency unchanged (%d)", q, r.proc.getLatencySamples());
+        }
+        // prepareToPlay at 8x reports the same latency as at 4x
+        setReal (r.proc, quality, 2.0f);
+        r.proc.prepareToPlay (48000.0, 512);
+        CHECK (r.proc.getLatencySamples() == lat, "prepared at 8x: same latency");
+    }
+    // Stereo and Pitch Snap reach the engine through the controls
+    {
+        Rig r (false);
+        for (int k = 0; k < numFilters; ++k) { setReal (r.proc, id (k, KeyTrack), 0.0f); setReal (r.proc, id (k, Coarse), 270.0f); }
+        long pos = 0;
+        r.runFor (0.2, nullptr, nullptr, pos);
+        CHECK (std::fabs (r.proc.getEngine().playedHz (0) - 270.0f) < 0.3f, "Snap Off: 270 Hz");
+        setReal (r.proc, pitchSnap, 1.0f);
+        r.runFor (0.2, nullptr, nullptr, pos);
+        CHECK (std::fabs (r.proc.getEngine().playedHz (0) - 277.18f) < 0.3f, "Snap Semis: 277.18 Hz (%.2f)", r.proc.getEngine().playedHz (0));
+        setReal (r.proc, pitchSnap, 2.0f);
+        r.runFor (0.2, nullptr, nullptr, pos);
+        CHECK (std::fabs (r.proc.getEngine().playedHz (0) - 261.63f) < 0.3f, "Snap Steps: C4 (%.2f)", r.proc.getEngine().playedHz (0));
+        setReal (r.proc, pitchSnap, 1.0f);
+        setReal (r.proc, pitchScale, 1.0f);   // Major
+        setReal (r.proc, pitchKey, 1.0f);     // C#: C#4 is the key's note
+        r.runFor (0.2, nullptr, nullptr, pos);
+        CHECK (std::fabs (r.proc.getEngine().playedHz (0) - 277.18f) < 0.3f, "C# major: C#4 (%.2f)", r.proc.getEngine().playedHz (0));
+    }
+    {
+        // uber: alpha alone, full width -> only the left side sounds
+        Rig r (false);
+        for (int k = 0; k < numFilters; ++k) setReal (r.proc, id (k, Level), k == 0 ? 0.0f : -60.0f);
+        setReal (r.proc, id (0, Mode), 2.0f);
+        setReal (r.proc, id (0, Width), 1.0f);
+        setReal (r.proc, id (0, Morph), 0.0f);      // fully left: low-pass (at x1 the notch would take the sine out)
+        setReal (r.proc, stereoMode, 1.0f);
+        long pos = 0;
+        r.runFor (0.5, nullptr, nullptr, pos);
+        const int ch = juce::jmax (2, r.inCh);
+        juce::AudioBuffer<float> buf (ch, 512);
+        buf.clear();
+        juce::MidiBuffer midi;
+        r.proc.processBlock (buf, midi);
+        CHECK (buf.getMagnitude (0, 0, 512) > 0.3f && buf.getMagnitude (1, 0, 512) < 1e-4f, "uber through the plugin: alpha on the left only (%.3f / %.5f)",
+               buf.getMagnitude (0, 0, 512), buf.getMagnitude (1, 0, 512));
     }
 }
 
@@ -420,9 +589,48 @@ static void testPanel (const juce::File& snapDir)
     }
     // live: 4 x (mode, gain, in limit, coarse, fine, Q, FM, morph, width, morph ends, out limit, key trk, tap, strike)
     //       + 2 links + offset, split, rate, grid + 4 levels + master limit = 67
-    // dimmed (milestone 3): stereo, snap, scale, key, preset, quality = 6
-    CHECK (enabled == 67, "%d live controls", enabled);
-    CHECK (dimmed == 6, "%d dimmed controls", dimmed);
+    //       + milestone 3: stereo, snap, scale, key, preset, quality = 73
+    CHECK (enabled == 73, "%d live controls", enabled);
+    CHECK (dimmed == 0, "%d dimmed controls", dimmed);
+
+    // the Preset menu lists Init and every factory preset; the Quality menu marks 8x heavy
+    {
+        juce::ComboBox* preset = nullptr;
+        juce::ComboBox* qual = nullptr;
+        for (auto* c : panel->getChildren())
+            if (auto* cb = dynamic_cast<juce::ComboBox*> (c))
+            {
+                if (cb->getName() == "Preset") preset = cb;
+                else if (cb->getNumItems() == 3 && cb->getItemText (0) == "2x") qual = cb;
+            }
+        CHECK (preset != nullptr && preset->getNumItems() == proc.getNumPrograms() && preset->getText() == "Init", "Preset menu: %d entries, shows Init",
+               preset != nullptr ? preset->getNumItems() : 0);
+        CHECK (qual != nullptr && qual->getItemText (2) == "8x heavy" && qual->getText() == "4x", "Quality menu: 2x / 4x / 8x heavy, on 4x");
+        if (preset != nullptr)
+        {
+            preset->setSelectedId (3, juce::sendNotificationSync);      // the second factory preset
+            CHECK (proc.getCurrentProgram() == 2 && preset->getText() == proc.getProgramName (2), "choosing a preset in the menu sets it");
+            proc.setCurrentProgram (0);
+        }
+    }
+    // the Coarse readout shows the snapped note while Pitch Snap is on
+    {
+        setReal (proc, PdParams::id (0, PdParams::Coarse), 270.0f);
+        PdKnob* alphaCoarse = nullptr;
+        for (auto* c : panel->getChildren())
+            if (auto* k = dynamic_cast<PdKnob*> (c))
+                if (k->getBounds().getCentreX() < 120 && k->readoutText().endsWith ("Hz") && alphaCoarse == nullptr) alphaCoarse = k;
+        CHECK (alphaCoarse != nullptr, "alpha's Coarse knob found");
+        if (alphaCoarse != nullptr)
+        {
+            const auto plain = alphaCoarse->readoutText();
+            setReal (proc, PdParams::pitchSnap, 1.0f);
+            const auto snapped = alphaCoarse->readoutText();
+            CHECK (plain == "C#4 270 Hz" && snapped == "C#4 277 Hz", "Coarse readout: %s, snapped %s", plain.toRawUTF8(), snapped.toRawUTF8());
+            setReal (proc, PdParams::pitchSnap, 0.0f);
+        }
+        setReal (proc, PdParams::id (0, PdParams::Coarse), 110.0f);
+    }
 
     // Modulation rings: alpha animated (Q and Morph) and moved by beta's LFO (FM): after some audio, the rings of
     // alpha's Coarse, Q and Morph knobs show a swing; beta's stay off.
@@ -507,8 +715,10 @@ int main (int argc, char** argv)
     }
     if (writeGolden) return 0;
     testState();
+    testPresets();
     testAudio();
     testMilestone2();
+    testMilestone3();
     testPanel (snapDir);
     testAutomation();
     std::printf ("plugin checks (%s): %d checks, %d failed\n", kWhich, checks, failures);

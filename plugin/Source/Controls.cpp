@@ -115,11 +115,14 @@ void PdKnob::paint (juce::Graphics& g)
 
     textAt (g, label, cx, cy + r + 17.0f, soft());
     if (param != nullptr)
-    {
-        const float v = param->convertFrom0to1 (param->getValue());
-        const auto s = readout ? readout (v) : param->getCurrentValueAsText();
-        textAt (g, s, cx, cy + r + 30.0f, text(), mono (11.0f));
-    }
+        textAt (g, readoutText(), cx, cy + r + 30.0f, text(), mono (11.0f));
+}
+
+juce::String PdKnob::readoutText() const
+{
+    if (param == nullptr) return {};
+    const float v = param->convertFrom0to1 (param->getValue());
+    return readout ? readout (v) : param->getCurrentValueAsText();
 }
 
 void PdKnob::refreshModulation()

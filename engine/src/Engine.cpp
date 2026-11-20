@@ -78,18 +78,34 @@ Engine::Engine()
     masterR.fn = { 0.6, 0.4 };
 }
 
-float Engine::targetHz (const FilterParams& fp, int note)
+float Engine::targetHz (const FilterParams& fp, int note, int snap, int scale, int key)
 {
     const float kt = fp.keyTrack ? (float) (note - 60) : 0.0f;
-    return fp.coarseHz * std::exp2 (fp.fineCents / 1200.0f + kt / 12.0f);
+    if (! pitch::active (snap, scale))
+        return fp.coarseHz * std::exp2 (fp.fineCents / 1200.0f + kt / 12.0f);     // nothing snapped: as before
+    // Snapped: the knobs' offset from C4 lands on the allowed notes around the filter's own note (Pitch.h).
+    const int base = fp.keyTrack ? note : pitch::kBaseNote;
+    const float off = pitch::quantize (pitch::offsetOf (fp.coarseHz, fp.fineCents), snap, scale, key, base);
+    return pitch::hzOf (off + kt);
 }
 
 void Engine::prepare (double sampleRate, int)
 {
     sr = sampleRate > 0.0 ? sampleRate : 48000.0;
-    osRate = sr * kFactor;
-    for (auto& u : up) u.prepare (sr, kFactor);
-    for (auto& d : dec) d.prepare (sr, kFactor);
+    // Every Quality's up- and down-sampling filters are made now (never on the audio thread), and the latency is made
+    // the same for all three: the shorter ones get a small extra delay at the project rate.
+    latencyAll = 0;
+    int own[kNumQualities] = {};
+    for (int q = 0; q < kNumQualities; ++q)
+    {
+        for (auto& u : up[q]) u.prepare (sr, factorFor (q));
+        for (auto& d : dec[q]) d.prepare (sr, factorFor (q));
+        // (the down-sampler's output sample is the last of its 'factor' oversampled ones: (factor - 1) / factor earlier)
+        own[q] = (int) std::lround (up[q][0].latency() + dec[q][0].latency() - (double) (factorFor (q) - 1) / factorFor (q));
+        latencyAll = std::max (latencyAll, own[q]);
+    }
+    for (int q = 0; q < kNumQualities; ++q) extraDelay[q] = std::min (kDelayLen - 1, latencyAll - own[q]);
+    qStep = (float) (1.0 / (kQualityFade * sr));
 
     smoothPitch = onePoleCoef (0.003, sr);      // 3 ms: quick enough for key tracking, no zipper on automation
     smoothQ     = onePoleCoef (0.010, sr);
@@ -107,8 +123,16 @@ void Engine::prepare (double sampleRate, int)
 void Engine::reset()
 {
     updateTargets();
-    for (auto& u : up) u.reset();
-    for (auto& d : dec) d.reset();
+    for (auto& set : up) for (auto& u : set) u.reset();
+    for (auto& set : dec) for (auto& d : set) d.reset();
+    setQuality (std::clamp (params.quality, 0, kNumQualities - 1));
+    qPhase = 0;
+    qGain = 1.0f;
+    qWait = 0;
+    std::fill (std::begin (delL), std::end (delL), 0.0f);
+    std::fill (std::begin (delR), std::end (delR), 0.0f);
+    delPos = 0;
+    uber.v = params.stereoMode == StereoUber ? 1.0f : 0.0f;
     for (int i = 0; i < kNumFilters; ++i)
     {
         auto& F = flt[i];
@@ -153,15 +177,35 @@ int Engine::noteFor (int f) const
     return noteAll;
 }
 
+void Engine::setQuality (int q)
+{
+    qActive = q;
+    fac = factorFor (q);
+    osRate = sr * fac;
+    for (auto& d : dec[q]) d.reset();
+    for (auto& F : flt)          // the filters' coefficients are worked out again for the new rate
+    {
+        F.cLogHz = -1.0f;
+        F.cLogQ = -100.0f;
+        F.cLogAp = -1.0f;
+    }
+}
+
 void Engine::updateTargets()
 {
     const float offsetOct = offsetSemitones (std::clamp (params.offset, -1.0f, 1.0f)) / 12.0f;
-    float lc[kNumFilters], lq[kNumFilters];
+    const int snap = params.snap, scale = params.scale, key = params.key;
+    const bool snapping = pitch::active (snap, scale);
+    float lc[kNumFilters], lq[kNumFilters], knobOct[kNumFilters];
     for (int i = 0; i < kNumFilters; ++i)
     {
         auto& F = flt[i];
         const auto& fp = params.f[i];
-        lc[i] = std::log2 (std::max (1.0f, targetHz (fp, noteFor (i)))) + offsetOct;
+        const int note = noteFor (i);
+        const float hz = targetHz (fp, note, snap, scale, key);
+        lc[i] = std::log2 (std::max (1.0f, hz)) + offsetOct;
+        // the knobs' own (snapped) tuning, for Link
+        knobOct[i] = snapping ? std::log2 (std::max (1.0f, hz)) - (fp.keyTrack ? (float) (note - 60) / 12.0f : 0.0f) : 0.0f;
         lq[i] = std::log2 (std::clamp (fp.q, 0.5f, 50.0f));
         F.tMorph = fp.morph;
         F.tWidth = fp.width;
@@ -176,7 +220,8 @@ void Engine::updateTargets()
         if (! on) continue;
         const int lead = pair == 0 ? Alpha : Delta, fol = pair == 0 ? Beta : Gamma;
         const auto& L = params.f[lead];
-        lc[fol] += std::log2 (std::max (1.0f, L.coarseHz) / kDefaultCoarseHz[lead]) + L.fineCents / 1200.0f;
+        if (snapping) lc[fol] += knobOct[lead] - std::log2 (kDefaultCoarseHz[lead]);     // the leader's snapped tuning
+        else          lc[fol] += std::log2 (std::max (1.0f, L.coarseHz) / kDefaultCoarseHz[lead]) + L.fineCents / 1200.0f;
         lq[fol] += std::log2 (std::clamp (L.q, 0.5f, 50.0f) / kDefaultQ);
         auto& F = flt[fol];
         F.tFm += L.fmAmt;
@@ -304,7 +349,8 @@ void Engine::computeMods (Mod* mods)
 
 // ------------------------------------------------------------------------------------------------ audio
 
-void Engine::renderFilter (int f, const Mod& md, const float* tU, const float* sU, float* oL, float* oR, bool first)
+void Engine::renderFilter (int f, const Mod& md, const float* tU, const float* sU, float* oL, float* oR, float* uL, float* uR,
+                           bool first)
 {
     auto& F = flt[f];
     const auto& fp = params.f[f];
@@ -402,7 +448,8 @@ void Engine::renderFilter (int f, const Mod& md, const float* tU, const float* s
     double ic1 = F.ic1, ic2 = F.ic2, E = F.energy, ap1 = F.ap1, ap2 = F.ap2;
     if (F.kick != 0.0) { ic1 += F.kick; F.kick = 0.0; }
 
-    for (int s = 0; s < kFactor; ++s)
+    const int n = fac;
+    for (int s = 0; s < n; ++s)
     {
         double x = (double) (tU[s] + wSide * (sU[s] - tU[s])) * gain;
         if (wIn > 0.0f)
@@ -457,8 +504,14 @@ void Engine::renderFilter (int f, const Mod& md, const float* tU, const float* s
             F.limL.unprime();
             F.limR.unprime();
         }
-        if (first) { oL[s] = (float) (yl * level); oR[s] = (float) (yr * level); }
-        else       { oL[s] += (float) (yl * level); oR[s] += (float) (yr * level); }
+        const float L = (float) (yl * level), R = (float) (yr * level);
+        // uber: alpha's and beta's right sides go left, gamma's and delta's left sides go right
+        if (first) { oL[s] = L; oR[s] = R; uL[s] = R; uR[s] = 0.0f; }
+        else
+        {
+            oL[s] += L; oR[s] += R;
+            if (blendRight) uL[s] += R; else uR[s] += L;
+        }
     }
 
     // Safety: never keep a broken or vanishing state (denormals).
@@ -477,9 +530,11 @@ void Engine::renderFilter (int f, const Mod& md, const float* tU, const float* s
 
 void Engine::process (const float* track, const float* side, float* outL, float* outR, int numSamples)
 {
-    float tU[kFactor], sU[kFactor], oL[kFactor], oR[kFactor];
+    float tU[kMaxFactor], sU[kMaxFactor], oL[kMaxFactor], oR[kMaxFactor], uL[kMaxFactor], uR[kMaxFactor];
     Mod mods[kNumFilters];
     updateTargets();
+    const int wantQ = std::clamp (params.quality, 0, kNumQualities - 1);
+    const float uberTarget = params.stereoMode == StereoUber ? 1.0f : 0.0f;
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -490,18 +545,34 @@ void Engine::process (const float* track, const float* side, float* outL, float*
         if (std::fabs (tx) > 1.0e-6f) trackHold = scHoldSamples;
         else if (trackHold > 0) --trackHold;
 
-        up[0].process (tx, tU);
-        up[1].process (sx, sU);
+        // The Quality running now does the work; the other two only keep their input memory filled.
+        for (int q = 0; q < kNumQualities; ++q)
+        {
+            if (q == qActive) { up[q][0].process (tx, tU); up[q][1].process (sx, sU); }
+            else              { up[q][0].push (tx);        up[q][1].push (sx); }
+        }
 
         stepLfos();
         computeMods (mods);
         for (int f = 0; f < kNumFilters; ++f)
-            renderFilter (f, mods[f], tU, sU, oL, oR, f == 0);
+            renderFilter (f, mods[f], tU, sU, oL, oR, uL, uR, f == 0);
+
+        // Stereo sum / uber (cross-faded over 20 ms)
+        uber.to (uberTarget, modStep);
+        if (uber.v > 0.0f)
+        {
+            const float w = uber.v;
+            for (int s = 0; s < fac; ++s)
+            {
+                oL[s] += w * (kUberGain * uL[s] - oL[s]);
+                oR[s] += w * (kUberGain * uR[s] - oR[s]);
+            }
+        }
 
         masterLim.to (params.masterLimit ? 1.0f : 0.0f, rampStep);
         const float wm = masterLim.v;
         if (wm > 0.0f)
-            for (int s = 0; s < kFactor; ++s)
+            for (int s = 0; s < fac; ++s)
             {
                 oL[s] += wm * ((float) masterL.next (oL[s]) - oL[s]);
                 oR[s] += wm * ((float) masterR.next (oR[s]) - oR[s]);
@@ -512,8 +583,42 @@ void Engine::process (const float* track, const float* side, float* outL, float*
             masterR.unprime();
         }
 
-        outL[i] = dec[0].process (oL);
-        outR[i] = dec[1].process (oR);
+        float yl = dec[qActive][0].process (oL);
+        float yr = dec[qActive][1].process (oR);
+
+        // Quality change: fade out, switch, let the new down-sampling filter fill, fade in.
+        if (qPhase != 0 || wantQ != qActive)
+        {
+            const float sm = qGain * qGain * (3.0f - 2.0f * qGain);     // smooth S-shaped fade
+            yl *= sm;
+            yr *= sm;
+            if (qPhase == 0) qPhase = 1;
+            if (qPhase == 1)
+            {
+                qGain -= qStep;
+                if (qGain <= 0.0f)
+                {
+                    qGain = 0.0f;
+                    setQuality (wantQ);
+                    qWait = (int) std::ceil (2.0 * dec[qActive][0].latency()) + 2;
+                    qPhase = 2;
+                }
+            }
+            else if (qPhase == 2) { if (--qWait <= 0) qPhase = 3; }
+            else if (qPhase == 3)
+            {
+                if (wantQ != qActive) qPhase = 1;
+                else if ((qGain += qStep) >= 1.0f) { qGain = 1.0f; qPhase = 0; }
+            }
+        }
+
+        // The extra delay that makes the latency the same at every Quality.
+        delL[delPos] = yl;
+        delR[delPos] = yr;
+        const int rd = (delPos - extraDelay[qActive] + kDelayLen) % kDelayLen;
+        outL[i] = delL[rd];
+        outR[i] = delR[rd];
+        delPos = (delPos + 1) % kDelayLen;
     }
 
     scShown.store (scHold > 0, std::memory_order_relaxed);

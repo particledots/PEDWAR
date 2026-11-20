@@ -2,8 +2,11 @@
 // the master mix. Plain C++17, no plugin code.
 //
 // The plugin wrapper hands it the settings (Params), the MIDI notes and the audio; the engine hands stereo audio back.
-// Everything inside runs at 4x the project's sample rate (the Quality menu, milestone 3, will offer 2x / 4x / 8x) and
-// is brought back down with a steep filter, so the self-oscillation, the shapers and the limiters stay clean.
+// Everything inside runs at 2x, 4x (the default) or 8x the project's sample rate (the Quality menu) and is brought back
+// down with a steep filter, so the self-oscillation, the shapers and the limiters stay clean. Changing Quality fades
+// the output out (4 ms), switches, waits for the new down-sampling filter to fill and fades back in (4 ms). The latency
+// is the same at every Quality (a small extra delay at the project rate makes up the difference), so Logic's latency
+// compensation never has to change.
 //
 // Signal flow per oversampled sample:
 //   inputs:  alpha and beta take the track audio. gamma and delta take the side chain while it carries audio (it is
@@ -14,7 +17,11 @@
 //   each filter:  Gain -> In limit (tanh) -> state-variable core (Filter / Res / Osc)
 //                 -> Output tap: stereo morph (Morph + Width, below) or LP / BP / HP / Notch on both sides
 //                 -> Out limit -> Level -> master stereo mix
-//   master:  Master limit -> output.
+//   master:  Stereo sum / uber -> Master limit -> output.
+//            sum:  left = every filter's left side, right = every filter's right side.
+//            uber: left = alpha's and beta's right sides (their all-pass blend), right = gamma's and delta's left sides
+//                  (theirs), both times 1.58 (+4 dB) so uber is about as loud as sum (it drops 3 to 6 dB without: half
+//                  the sources on each side). The switch cross-fades over 20 ms.
 //
 // Stereo morph: Morph mixes the core's LP, HP and BP into a moved notch (see morphWeights in Params.h). Width: one side
 // (right on alpha / beta, left on gamma / delta) is an equal-power blend of that signal and a copy through two
@@ -44,10 +51,14 @@
 //   Osc     k = -a (1 - E / 0.25): the level is held at 0.5 (LP output) at every frequency. Q sets how firmly
 //           (low Q holds it tight, high Q lets strikes and input swell it more).
 // Strike adds a kick to the band-pass state, so the filter rings at its own frequency, as loud as the velocity says.
+//
+// Pitch Snap, Scale and Key (Pitch.h) snap each filter's own tuning (Coarse + Fine) before key tracking, Link, Offset
+// and the LFOs are added. With Snap Off and Scale Off nothing is snapped and the tuning is exactly as before.
 
 #pragma once
 #include "Nonlinear.h"
 #include "Params.h"
+#include "Pitch.h"
 #include "Resampling.h"
 
 #include <algorithm>
@@ -63,7 +74,11 @@ namespace pedwar
     class Engine
     {
     public:
-        static constexpr int kFactor = 4;            // fixed until milestone 3
+        static constexpr int kMaxFactor = 8;         // Quality: 2x, 4x (default), 8x
+        static constexpr int kNumQualities = 3;
+        static constexpr int factorFor (int quality) { return quality <= 0 ? 2 : (quality >= 2 ? 8 : 4); }
+        static constexpr double kQualityFade = 0.004; // seconds: fade out, and back in, when Quality changes
+        static constexpr float kUberGain = 1.5849f;     // +4 dB: uber about as loud as sum
         static constexpr float kStrikeKick = 0.7f;   // ringing level of a full-velocity strike
         static constexpr float kOscLevel = 0.5f;     // Osc mode sine level (LP output)
         static constexpr double kSidechainHold = 2.0; // seconds of silence before gamma/delta go back to the track
@@ -93,8 +108,11 @@ namespace pedwar
         // track / side: mono, numSamples each, either may be nullptr (= silence). outL / outR: numSamples each.
         void process (const float* track, const float* side, float* outL, float* outR, int numSamples);
 
-        double latencySamples() const { return up[0].latency() + dec[0].latency(); }
-        int oversamplingFactor() const { return kFactor; }
+        // The same at every Quality (whole project-rate samples).
+        double latencySamples() const { return (double) latencyAll; }
+        // The Quality now running (2, 4 or 8). While a change fades, the old one until the switch.
+        int oversamplingFactor() const { return factorFor (qActive); }
+        bool qualitySwitching() const { return qPhase != 0; }
 
         // For the panel (any thread).
         int strikeCount (int f) const { return strikes[f].load (std::memory_order_relaxed); }
@@ -110,8 +128,10 @@ namespace pedwar
         float modDepth (int f, int target) const { return modDepthShown[f][target].load (std::memory_order_relaxed); }
 
         // The frequency a filter's own knobs ask for (before Link, Offset, LFOs and the safety limits), for 'note'
-        // (60 = no key-track shift).
-        static float targetHz (const FilterParams& fp, int note);
+        // (60 = no key-track shift), with Pitch Snap, Scale and Key (Pitch.h).
+        static float targetHz (const FilterParams& fp, int note, int snap = 0, int scale = 0, int key = 0);
+        // Only the knobs' tuning (Coarse + Fine, snapped), for the panel's Coarse readout: as targetHz for note 60.
+        static float knobHz (const FilterParams& fp, int snap, int scale, int key) { return targetHz (fp, 60, snap, scale, key); }
 
     private:
         struct Ramp      // linear move towards 0 or 1, used for every switch so none of them clicks
@@ -146,7 +166,9 @@ namespace pedwar
         // This project-rate sample's modulation of one filter.
         struct Mod { float pitchOct = 0.0f, qOct = 0.0f, morph = 0.0f, ap = 0.0f; float dPitch = 0.0f, dQ = 0.0f, dMorph = 0.0f; };
 
-        void renderFilter (int f, const Mod& m, const float* tU, const float* sU, float* oL, float* oR, bool first);
+        void renderFilter (int f, const Mod& m, const float* tU, const float* sU, float* oL, float* oR, float* uL, float* uR,
+                           bool first);
+        void setQuality (int q);
         void updateTargets();
         void stepLfos();
         void computeMods (Mod* mods);
@@ -155,14 +177,24 @@ namespace pedwar
         Params params;
         bool sideFeedsAll = false;
         double sr = 48000.0, osRate = 192000.0;
+        int fac = 4;
         float smoothPitch = 0.1f, smoothQ = 0.05f, smoothGain = 0.05f, smoothKnob = 0.05f, smoothRate = 0.01f;
         float rampStep = 0.01f, sideStep = 0.001f, modStep = 0.002f;
         float maxHz = 20000.0f;
 
         Filter flt[kNumFilters];
-        Upsampler up[2];          // track, side
-        Decimator dec[2];         // left, right
-        Ramp masterLim;
+        Upsampler up[kNumQualities][2];   // per Quality: track, side (the idle ones are kept filled, see process)
+        Decimator dec[kNumQualities][2];  // per Quality: left, right
+        int qActive = 1;                  // the Quality running now (0 = 2x, 1 = 4x, 2 = 8x)
+        int qPhase = 0;                   // 0 = steady, 1 = fading out, 2 = waiting for the new filter, 3 = fading in
+        float qGain = 1.0f, qStep = 0.01f;
+        int qWait = 0;
+        int latencyAll = 0;               // whole samples, the same at every Quality
+        int extraDelay[kNumQualities] = {};
+        static constexpr int kDelayLen = 16;
+        float delL[kDelayLen] = {}, delR[kDelayLen] = {};
+        int delPos = 0;
+        Ramp masterLim, uber;
         nl::Adaa1<nl::Knee> masterL, masterR;
         int scHold = 0, trackHold = 0, scHoldSamples = 96000;
 

@@ -123,6 +123,19 @@ void Upsampler::process (float x, float* out)
     }
 }
 
+void Upsampler::push (float x)
+{
+    if (x == 0.0f)
+    {
+        if (zeroRun >= perPhase) return;          // already all silence
+        ++zeroRun;
+    }
+    else
+        zeroRun = 0;
+    pos = (pos == 0) ? perPhase - 1 : pos - 1;
+    hist[(size_t) pos] = hist[(size_t) (pos + perPhase)] = x;
+}
+
 // ------------------------------------------------------------------------------------------------ Decimator
 
 void Decimator::prepare (double baseRate, int factor)

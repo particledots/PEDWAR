@@ -18,6 +18,9 @@ namespace pedwar
         void reset();
         // One project-rate sample in, 'factor' oversampled samples out.
         void process (float x, float* out);
+        // One project-rate sample in, nothing out: keeps an idle Upsampler's memory up to date, so it can take over at
+        // once when Quality changes (no gap in the signal the filters hear).
+        void push (float x);
         double latency() const { return ((double) numTaps - 1.0) * 0.5 / (double) fac; }   // in project-rate samples
 
     private:
