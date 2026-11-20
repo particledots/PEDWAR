@@ -53,6 +53,12 @@ static void setReal (PedwarAudioProcessor& proc, const char* pid, float v)
 
 // ------------------------------------------------------------------------------------------------ 1. control list
 
+// 4 decimals; a value that rounds to zero is written as 0 (never "-0"), so the list reads the same on every machine.
+static juce::String num (float v)
+{
+    return juce::String (std::fabs (v) < 0.00005f ? 0.0f : v, 4);
+}
+
 static juce::StringArray dumpLayout (PedwarAudioProcessor& proc)
 {
     juce::StringArray lines;
@@ -62,9 +68,9 @@ static juce::StringArray dumpLayout (PedwarAudioProcessor& proc)
         const auto& r = p->getNormalisableRange();
         juce::String line;
         line << i++ << " " << p->paramID << " v" << p->getVersionHint() << " | " << p->getName (100)
-             << " | range " << juce::String (r.start, 4) << ".." << juce::String (r.end, 4) << " step " << juce::String (r.interval, 4)
-             << " | default " << juce::String (p->convertFrom0to1 (p->getDefaultValue()), 4)
-             << " | mid " << juce::String (p->convertFrom0to1 (0.5f), 4);
+             << " | range " << num (r.start) << ".." << num (r.end) << " step " << num (r.interval)
+             << " | default " << num (p->convertFrom0to1 (p->getDefaultValue()))
+             << " | mid " << num (p->convertFrom0to1 (0.5f));
         if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p)) line << " | choices " << c->choices.joinIntoString (";");
         if (dynamic_cast<juce::AudioParameterBool*> (p) != nullptr) line << " | switch";
         lines.add (line);
