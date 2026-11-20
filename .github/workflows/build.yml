@@ -190,8 +190,10 @@ jobs:
           cp pluginval-*.log PEDWAR-macOS/ 2>/dev/null || true
           cat > PEDWAR-macOS/INSTALL.txt <<'TXT'
           PEDWAR and PEDWAR Synth (particledots). Two plugins from the same engine:
-            PEDWAR        an audio effect played by MIDI: put it in an Audio FX slot of any track.
-                          MIDI reaches it through the side-chain MIDI menu at the top of its plug-in window.
+            PEDWAR        an audio effect played by MIDI. To play it by MIDI: on a Software Instrument track, click the
+                          instrument slot and choose AU MIDI-controlled Effects > particledots > PEDWAR, then pick the
+                          audio track to filter in PEDWAR's Side Chain menu (top right) and mute that audio track.
+                          As a plain filter without MIDI it also goes in an Audio FX slot.
             PEDWAR Synth  an instrument: use it on a Software Instrument track.
 
           1. Unzip.
@@ -200,7 +202,8 @@ jobs:
           3. Copy "PEDWAR.component" and "PEDWAR Synth.component"  to  ~/Library/Audio/Plug-Ins/Components/
              Copy "PEDWAR.vst3" and "PEDWAR Synth.vst3"            to  ~/Library/Audio/Plug-Ins/VST3/
           4. In Logic: Settings > Plug-in Manager > rescan. Look under Audio Units > particledots:
-             PEDWAR (in an Audio FX slot) and PEDWAR Synth (on a Software Instrument track).
+             PEDWAR (instrument slot, AU MIDI-controlled Effects; or an Audio FX slot) and PEDWAR Synth
+             (AU Instruments, on a Software Instrument track).
           TXT
           # Easy installer for Logic (double-click; same file in every plugin). It installs every .component it finds.
           cp tools/install/Install-Unofficial-Plugin.command PEDWAR-macOS/

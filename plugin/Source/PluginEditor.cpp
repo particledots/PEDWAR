@@ -180,13 +180,15 @@ void PedwarPanel::timerCallback()
         else if (l->currentGlow() > 0.01f) l->flash (l->currentGlow() * 0.72f);
         else if (l->currentGlow() > 0.0f) l->flash (0.0f);
     }
-    // The "side chain" label of gamma and delta lights up while the side chain carries audio.
-    const bool sc = proc.getEngine().sidechainPresent();
-    if (sc != shownSidechain)
+    // Each filter's input label: "side chain" in the filter's colour while that filter is taking the side chain.
+    bool changed = false;
+    for (int f = 0; f < numFilters; ++f)
     {
-        shownSidechain = sc;
-        repaint (0, 80, kMasterX, 16);
+        const bool sc = proc.getEngine().filterUsesSidechain (f);
+        if (sc != shownSidechain[f]) { shownSidechain[f] = sc; changed = true; }
     }
+    if (changed)
+        repaint (0, 80, kMasterX, 16);
 }
 
 void PedwarPanel::paint (juce::Graphics& g)
@@ -214,9 +216,17 @@ void PedwarPanel::paint (juce::Graphics& g)
 
         textAt (g, utf8 (kLetters[f]), x0 + 12.0f, 76.0f, c, 17.0f, Align::left);
         textAt (g, kNames[f], x0 + 30.0f, 75.0f, text(), 13.0f, Align::left);
-        const bool fromSide = PedwarAudioProcessor::isSynth || f >= pedwar::Gamma;
-        const bool lit = PedwarAudioProcessor::isSynth || f < pedwar::Gamma || shownSidechain;
-        textAt (g, fromSide ? "side chain" : "track in", x0 + 12.0f, 91.0f, lit ? soft() : muted(), 11.0f, Align::left);
+        // alpha / beta: "track in" (grey) unless they have switched to the side chain; gamma / delta (and every filter
+        // of PEDWAR Synth): "side chain", dark while there is none. In use: the filter's colour, with a dot.
+        const bool onSide = shownSidechain[f];
+        const bool sideLabel = onSide || PedwarAudioProcessor::isSynth || f >= pedwar::Gamma;
+        const auto labelColour = onSide ? c : (sideLabel ? muted() : soft());
+        if (onSide)
+        {
+            g.setColour (c);
+            g.fillEllipse (x0 + 12.0f, 84.0f, 6.0f, 6.0f);
+        }
+        textAt (g, sideLabel ? "side chain" : "track in", x0 + (onSide ? 22.0f : 12.0f), 91.0f, labelColour, 11.0f, Align::left);
     }
 
     // Links (M2)

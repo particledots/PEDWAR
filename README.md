@@ -6,16 +6,24 @@ ceithir (a quad state-variable filter / resonator). It is not a copy, contains n
 affiliated with Instruō. The ceithir is an analog module with no published firmware; its manual was used only to
 understand what the controls do. "Pedwar" is Welsh for "four".
 
-Status: **milestone 1 of 3 (version 0.1.0), built; waiting for a test in Logic.**
+Status: **milestone 1 of 3 (version 0.1.1), built; waiting for a re-test in Logic.**
 
 ## What works (milestone 1)
 
 Signals inside are plus/minus 1 at full scale.
 
-- **Two plugins.** PEDWAR goes in an **Audio FX** slot (AU type `aumf`, a MIDI-controlled effect): it filters the
-  track, and gets MIDI through the **side-chain MIDI menu** at the top of its plug-in window. PEDWAR Synth goes on a
-  **Software Instrument** track (AU type `aumu`), for self-oscillating patches played from the keyboard, and has an
-  optional side-chain audio input. Presets and saved settings are the same in both.
+- **Two plugins.** PEDWAR is a MIDI-controlled effect (AU type `aumf`); PEDWAR Synth is an instrument (AU type
+  `aumu`), for self-oscillating patches played from the keyboard, with an optional side-chain audio input. Presets
+  and saved settings are the same in both.
+- **Two ways to use PEDWAR in Logic.** Logic never sends MIDI to a plug-in in an Audio FX slot (there is no MIDI
+  side-chain menu for third-party effects), so:
+  - **Played by MIDI** (strike, key track): make a **Software Instrument** track, click its instrument slot and choose
+    **AU MIDI-controlled Effects > particledots > PEDWAR**. In PEDWAR's **Side Chain** menu (top right of its window)
+    choose the audio track to filter, and mute that audio track so only PEDWAR's version is heard (a muted track
+    still feeds the side chain). The notes in the instrument track's regions, or played on the keyboard with that
+    track selected, play PEDWAR. All four filters hear the chosen track.
+  - **Plain filter, no MIDI**: put it in an **Audio FX** slot (Audio Units > particledots > PEDWAR). α and β filter
+    the track; the Side Chain menu can feed γ and δ another track.
 - **Four filters**, α alpha, β beta, γ gamma, δ delta, each a state-variable filter with LP, BP, HP and notch.
   **Mode**:
   - **Filter**: a normal filter. **Q** runs from 0.5 to 50 (0.707 is the classic -3 dB at the cutoff; LP and BP
@@ -45,10 +53,13 @@ Signals inside are plus/minus 1 at full scale.
 - **Levels** (one fader per filter, -inf to +6 dB, -12 dB by default so the four together are about the input's level),
   the master stereo mix, and **Master limit** (off / on): very linear at low levels, it rounds off towards 0 dB when
   pushed.
-- **Inputs.** In PEDWAR, α and β always take the track audio. γ and δ take Logic's **side chain** while it carries
-  audio, and the track audio otherwise (the side chain counts as present until it has been silent for 2 seconds; the
-  change is cross-faded over 20 ms). The "side chain" label under γ and δ lights up while it is in use. In PEDWAR
-  Synth there is no track audio: the side chain (if one is chosen) feeds all four.
+- **Inputs.** In PEDWAR, α and β take the track audio. γ and δ take Logic's **side chain** while it carries audio,
+  and the track audio otherwise (the side chain counts as present until it has been silent for 2 seconds; the change
+  is cross-faded over 20 ms). While the track input has been silent for 2 seconds and the side chain plays, α and β
+  take the side chain too: that is what happens in the instrument slot, where the side chain is the only audio.
+  Under each filter's name, "track in" or "side chain" says what it is hearing; when it is the side chain, the label
+  turns the filter's colour with a dot in front. In PEDWAR Synth there is no track audio: the side chain (if one is
+  chosen) feeds all four.
 - **The panel** is the approved draft: every control of milestones 2 and 3 is in place, dimmed and tagged M2 or M3.
   The window opens at about 780 x 700 and keeps the draft's proportions when you drag the corner.
 - **Clean under automation.** Everything runs at 4x the project's sample rate with steep filters on the way in and out,
@@ -98,8 +109,9 @@ Nothing in `engine/` knows about knobs or Logic.
    `~/Library/Audio/Plug-Ins/VST3/`.
 6. Restart Logic. If it was already scanned, Logic Pro > Settings > Plug-In Manager > Reset & Rescan Selection.
 
-PEDWAR appears in an Audio FX slot under **Audio Units > particledots > PEDWAR**; PEDWAR Synth on a Software
-Instrument track under **AU Instruments > particledots > PEDWAR Synth**. The same package also sits in a private draft
+PEDWAR appears in the instrument slot of a Software Instrument track under **AU MIDI-controlled Effects >
+particledots > PEDWAR** (to play it by MIDI) and in an Audio FX slot under **Audio Units > particledots > PEDWAR**
+(as a plain filter); PEDWAR Synth under **AU Instruments > particledots > PEDWAR Synth**. The same package also sits in a private draft
 release of this repo (only people with access see it).
 
 ## Notes

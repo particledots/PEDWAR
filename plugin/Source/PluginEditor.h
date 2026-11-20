@@ -31,7 +31,7 @@ private:
     std::vector<std::unique_ptr<juce::Component>> owned;
     PdStrikeLight* lights[4] {};
     int lastStrikes[4] {};
-    bool shownSidechain = false;
+    bool shownSidechain[4] { false, false, false, false };
     juce::ComboBox presetMenu;
 };
 

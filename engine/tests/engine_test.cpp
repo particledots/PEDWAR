@@ -328,6 +328,30 @@ static void testRouting()
     o = render (ea, a, 0.6, sine (1000, 0.1), sine (3000, 0.1));
     CHECK (toneAmp (o.l, 3000, (size_t) (0.3 * gSr)) < 0.002 && toneAmp (o.l, 1000, (size_t) (0.3 * gSr)) > 0.09, "alpha: track only");
 
+    // ... from the very first sample when both start together (no blip of the side chain)
+    Engine eb; eb.setParams (a); eb.prepare (gSr, kBlock);
+    o = render (eb, a, 0.1, sine (1000, 0.1), sine (3000, 0.1));
+    CHECK (toneAmp (o.l, 3000, (size_t) (0.002 * gSr)) < 0.002, "alpha: no side chain when both start together");
+    CHECK (! eb.filterUsesSidechain (0) && ! eb.filterUsesSidechain (1) && eb.filterUsesSidechain (2) && eb.filterUsesSidechain (3),
+           "usage flags: alpha/beta track, gamma/delta side chain");
+
+    // Instrument slot (MIDI-controlled effect): the track input is silent, so alpha and beta take the side chain too
+    Engine ei; ei.setParams (a); ei.prepare (gSr, kBlock);
+    o = render (ei, a, 0.6, silence(), sine (3000, 0.1));
+    CHECK (std::fabs (db (toneAmp (o.l, 3000, (size_t) (0.1 * gSr)) / 0.1)) < 0.5, "instrument slot: alpha hears the side chain");
+    for (int f = 0; f < kNumFilters; ++f)
+        CHECK (ei.filterUsesSidechain (f), "instrument slot: filter %d shown on the side chain", f);
+    // track audio arrives: alpha goes back to it at once (20 ms cross-fade)
+    o = render (ei, a, 0.6, sine (1000, 0.1), sine (3000, 0.1));
+    CHECK (toneAmp (o.l, 3000, (size_t) (0.1 * gSr)) < 0.002 && std::fabs (db (toneAmp (o.l, 1000, (size_t) (0.1 * gSr)) / 0.1)) < 0.5,
+           "track returns: alpha back on the track");
+    CHECK (! ei.filterUsesSidechain (0), "track returns: alpha shown on the track");
+    // track silent for less than 2 s: alpha stays on the (silent) track
+    o = render (ei, a, 1.5, silence(), sine (3000, 0.1));
+    CHECK (toneAmp (o.l, 3000, (size_t) (0.1 * gSr)) < 0.002, "track gap under 2 s: alpha stays on the track");
+    o = render (ei, a, 1.5, silence(), sine (3000, 0.1));
+    CHECK (std::fabs (db (toneAmp (o.l, 3000, (size_t) (1.0 * gSr)) / 0.1)) < 0.5, "track silent 2 s: alpha takes the side chain");
+
     // PEDWAR Synth: the side chain feeds all four
     Engine es; es.setSidechainFeedsAll (true); es.setParams (a); es.prepare (gSr, kBlock);
     o = render (es, a, 0.6, nullptr, sine (3000, 0.1));

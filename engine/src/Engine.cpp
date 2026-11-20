@@ -27,6 +27,7 @@ Engine::Engine()
 {
     for (auto& s : strikes) s.store (0);
     for (auto& h : shownHz) h.store (440.0f);
+    for (auto& u : usingSide) u.store (false);
     for (auto& f : flt)
     {
         f.limL.fn = { 0.35, 0.35 };
@@ -84,7 +85,9 @@ void Engine::reset()
     masterL.unprime();
     masterR.unprime();
     scHold = 0;
+    trackHold = 0;
     scShown.store (false);
+    for (auto& u : usingSide) u.store (sideFeedsAll, std::memory_order_relaxed);
 }
 
 void Engine::updateTargets()
@@ -178,7 +181,10 @@ void Engine::renderFilter (int f, const float* tU, const float* sU, float* oL, f
     }
     F.inLim.to (fp.inLimit ? 1.0f : 0.0f, rampStep);
     F.outLim.to (fp.outLimit ? 1.0f : 0.0f, rampStep);
-    const bool useSide = sideFeedsAll || (f >= Gamma && scHold > 0);
+    // gamma and delta take the side chain while it carries audio. alpha and beta take it too while the track input
+    // has been silent for 2 s: that is how PEDWAR gets its audio in the instrument slot of a Software Instrument track
+    // (Logic's MIDI-controlled effect set-up), where the side chain is the only audio there is.
+    const bool useSide = sideFeedsAll || (scHold > 0 && (f >= Gamma || trackHold == 0));
     F.side.to (useSide ? 1.0f : 0.0f, sideStep);
     float tw[kNumTaps];
     for (int t = 0; t < kNumTaps; ++t)
@@ -274,6 +280,8 @@ void Engine::process (const float* track, const float* side, float* outL, float*
         const float sx = side != nullptr ? side[i] : 0.0f;
         if (std::fabs (sx) > 1.0e-6f) scHold = scHoldSamples;
         else if (scHold > 0) --scHold;
+        if (std::fabs (tx) > 1.0e-6f) trackHold = scHoldSamples;
+        else if (trackHold > 0) --trackHold;
 
         up[0].process (tx, tU);
         up[1].process (sx, sU);
@@ -300,6 +308,8 @@ void Engine::process (const float* track, const float* side, float* outL, float*
     }
 
     scShown.store (scHold > 0, std::memory_order_relaxed);
+    for (int f = 0; f < kNumFilters; ++f)
+        usingSide[f].store (sideFeedsAll || (scHold > 0 && (f >= Gamma || trackHold == 0)), std::memory_order_relaxed);
     for (int f = 0; f < kNumFilters; ++f)
         shownHz[f].store (std::exp2 (flt[f].logHz), std::memory_order_relaxed);
 }

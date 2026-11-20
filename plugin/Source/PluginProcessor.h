@@ -1,8 +1,9 @@
 // The plugin wrapper, shared by both plugins. It talks to Logic, reads the control values, the MIDI notes and the audio,
 // and passes them to the engine. It contains no sound-making code.
 //
-//   PEDWAR        (PEDWAR_SYNTH = 0): MIDI-controlled effect (AU aumf). Track audio in; side-chain audio in; MIDI from
-//                  Logic's side-chain MIDI menu.
+//   PEDWAR        (PEDWAR_SYNTH = 0): MIDI-controlled effect (AU aumf). Track audio in; side-chain audio in. In Logic it
+//                  gets MIDI only in a Software Instrument track's instrument slot (AU MIDI-controlled Effects), where
+//                  the track input is silent and the audio arrives on the side chain.
 //   PEDWAR Synth  (PEDWAR_SYNTH = 1): instrument (AU aumu) with an optional side-chain audio input.
 
 #pragma once

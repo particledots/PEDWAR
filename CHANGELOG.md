@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.1 — milestone 1 fix (built 2026-11-20, waiting for a re-test in Logic)
+
+- Logic only sends MIDI to a MIDI-controlled effect loaded in the **instrument slot** of a Software Instrument track
+  (AU MIDI-controlled Effects), with the audio to filter chosen in its Side Chain menu; nothing in an Audio FX slot
+  gets MIDI. The README and INSTALL.txt now describe that set-up instead of a "side-chain MIDI menu", which does not
+  exist for third-party effects.
+- In that set-up the track input is silent, so α and β now also take the side chain while the track input has been
+  silent for 2 seconds (γ and δ already did). All four filters hear the chosen track.
+- The input label under each filter's name now clearly shows what the filter hears: "side chain" in the filter's
+  colour with a dot while it takes the side chain (it was only a slightly lighter grey).
+- Engine self-test and plugin-layer check: new checks for the instrument-slot routing and the labels' state.
+  No control or saved setting changed.
+
 ## 0.1.0 — milestone 1 (built 2026-11-19, waiting for a test in Logic)
 
 - First build: repo layout, build workflow (engine self-test, plugin-layer check, universal AU + VST3 for both plugins,

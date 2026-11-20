@@ -1,7 +1,7 @@
 # The two PEDWAR plugin wrappers: what Logic sees (AU / VST3), the controls and the panel.
 # Both are built from the same source files and the same parameter list; the sound itself lives in ../engine.
 #
-#   PEDWAR        MIDI-controlled audio effect (AU type aumf): Audio FX slot, MIDI from Logic's side-chain MIDI menu.
+#   PEDWAR        MIDI-controlled audio effect (AU type aumf): Logic instrument slot (AU MIDI-controlled Effects), audio from its Side Chain menu.
 #   PEDWAR Synth  instrument (AU type aumu) with an optional side-chain audio input.
 #
 # The identifiers below were chosen once, for the first build, and must never change

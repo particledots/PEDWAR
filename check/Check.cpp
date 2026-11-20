@@ -256,6 +256,15 @@ static void testAudio()
         o = s.runFor (0.6, sine (1000, 0.1), sine (3000, 0.1), pos);
         CHECK (std::fabs (toneAmp (o, 3000, 48000, 9600) / 0.1 - 1.0) < 0.06, "side chain reaches gamma");
         CHECK (toneAmp (o, 1000, 48000, 9600) < 0.002, "track does not reach gamma while the side chain plays");
+        // instrument slot of a Software Instrument track (Logic's MIDI-controlled effect set-up): the main input is
+        // silent and the chosen track arrives on the side chain, so alpha (and all four) hear it
+        Rig m (true);
+        soloWire (m.proc, 0);
+        pos = 0;
+        o = m.runFor (0.6, nullptr, sine (3000, 0.1), pos);
+        CHECK (std::fabs (toneAmp (o, 3000, 48000, 9600) / 0.1 - 1.0) < 0.06, "instrument slot: side chain reaches alpha");
+        for (int k = 0; k < PdParams::numFilters; ++k)
+            CHECK (m.proc.getEngine().filterUsesSidechain (k), "instrument slot: filter %d on the side chain", k);
         // no side chain bus at all: gamma takes the track
         Rig n (false);
         soloWire (n.proc, 3);
