@@ -1,0 +1,75 @@
+0 aMode v1 | Alpha mode | range 0.0000..2.0000 step 1.0000 | default 0.0000 | mid 1.0000 | choices Filter;Res;Osc
+1 aGain v1 | Alpha gain | range -60.0000..12.0000 step 0.0000 | default 0.0000 | mid -3.7889
+2 aInLimit v1 | Alpha in limit | range 0.0000..1.0000 step 1.0000 | default 0.0000 | mid 1.0000 | switch
+3 aCoarse v1 | Alpha coarse | range 16.0000..20000.0000 step 0.0000 | default 110.0000 | mid 565.6854
+4 aFine v1 | Alpha fine | range -100.0000..100.0000 step 0.0000 | default 0.0000 | mid 0.0000
+5 aQ v1 | Alpha Q | range 0.5000..50.0000 step 0.0000 | default 2.0000 | mid 5.0000
+6 aOutLimit v1 | Alpha out limit | range 0.0000..1.0000 step 1.0000 | default 0.0000 | mid 1.0000 | switch
+7 aKeyTrack v1 | Alpha key track | range 0.0000..1.0000 step 1.0000 | default 1.0000 | mid 1.0000 | switch
+8 aTap v1 | Alpha output tap | range 0.0000..4.0000 step 1.0000 | default 0.0000 | mid 2.0000 | choices Stereo morph;LP;BP;HP;Notch
+9 aStrike v1 | Alpha strike | range 0.0000..1.0000 step 1.0000 | default 1.0000 | mid 1.0000 | switch
+10 aFmAmt v1 | Alpha FM amount | range -1.0000..1.0000 step 0.0000 | default 0.0000 | mid 0.0000
+11 aMorph v1 | Alpha morph | range 0.0000..1.0000 step 0.0000 | default 0.5000 | mid 0.5000
+12 aMorphEnds v1 | Alpha morph ends | range 0.0000..1.0000 step 1.0000 | default 0.0000 | mid 0.0000 | choices LP-HP;BP
+13 aWidth v1 | Alpha width | range 0.0000..1.0000 step 0.0000 | default 0.3500 | mid 0.5000
+14 aLevel v1 | Alpha level | range -60.0000..6.0000 step 0.0000 | default -12.0000 | mid -17.2043
+15 bMode v1 | Beta mode | range 0.0000..2.0000 step 1.0000 | default 0.0000 | mid 1.0000 | choices Filter;Res;Osc
+16 bGain v1 | Beta gain | range -60.0000..12.0000 step 0.0000 | default 0.0000 | mid -3.7889
+17 bInLimit v1 | Beta in limit | range 0.0000..1.0000 step 1.0000 | default 0.0000 | mid 1.0000 | switch
+18 bCoarse v1 | Beta coarse | range 16.0000..20000.0000 step 0.0000 | default 220.0000 | mid 565.6854
+19 bFine v1 | Beta fine | range -100.0000..100.0000 step 0.0000 | default 0.0000 | mid 0.0000
+20 bQ v1 | Beta Q | range 0.5000..50.0000 step 0.0000 | default 2.0000 | mid 5.0000
+21 bOutLimit v1 | Beta out limit | range 0.0000..1.0000 step 1.0000 | default 0.0000 | mid 1.0000 | switch
+22 bKeyTrack v1 | Beta key track | range 0.0000..1.0000 step 1.0000 | default 1.0000 | mid 1.0000 | switch
+23 bTap v1 | Beta output tap | range 0.0000..4.0000 step 1.0000 | default 0.0000 | mid 2.0000 | choices Stereo morph;LP;BP;HP;Notch
+24 bStrike v1 | Beta strike | range 0.0000..1.0000 step 1.0000 | default 1.0000 | mid 1.0000 | switch
+25 bFmAmt v1 | Beta FM amount | range -1.0000..1.0000 step 0.0000 | default 0.0000 | mid 0.0000
+26 bMorph v1 | Beta morph | range 0.0000..1.0000 step 0.0000 | default 0.5000 | mid 0.5000
+27 bMorphEnds v1 | Beta morph ends | range 0.0000..1.0000 step 1.0000 | default 0.0000 | mid 0.0000 | choices LP-HP;BP
+28 bWidth v1 | Beta width | range 0.0000..1.0000 step 0.0000 | default 0.3500 | mid 0.5000
+29 bLevel v1 | Beta level | range -60.0000..6.0000 step 0.0000 | default -12.0000 | mid -17.2043
+30 gMode v1 | Gamma mode | range 0.0000..2.0000 step 1.0000 | default 0.0000 | mid 1.0000 | choices Filter;Res;Osc
+31 gGain v1 | Gamma gain | range -60.0000..12.0000 step 0.0000 | default 0.0000 | mid -3.7889
+32 gInLimit v1 | Gamma in limit | range 0.0000..1.0000 step 1.0000 | default 0.0000 | mid 1.0000 | switch
+33 gCoarse v1 | Gamma coarse | range 16.0000..20000.0000 step 0.0000 | default 440.0001 | mid 565.6854
+34 gFine v1 | Gamma fine | range -100.0000..100.0000 step 0.0000 | default 0.0000 | mid 0.0000
+35 gQ v1 | Gamma Q | range 0.5000..50.0000 step 0.0000 | default 2.0000 | mid 5.0000
+36 gOutLimit v1 | Gamma out limit | range 0.0000..1.0000 step 1.0000 | default 0.0000 | mid 1.0000 | switch
+37 gKeyTrack v1 | Gamma key track | range 0.0000..1.0000 step 1.0000 | default 1.0000 | mid 1.0000 | switch
+38 gTap v1 | Gamma output tap | range 0.0000..4.0000 step 1.0000 | default 0.0000 | mid 2.0000 | choices Stereo morph;LP;BP;HP;Notch
+39 gStrike v1 | Gamma strike | range 0.0000..1.0000 step 1.0000 | default 1.0000 | mid 1.0000 | switch
+40 gFmAmt v1 | Gamma FM amount | range -1.0000..1.0000 step 0.0000 | default 0.0000 | mid 0.0000
+41 gMorph v1 | Gamma morph | range 0.0000..1.0000 step 0.0000 | default 0.5000 | mid 0.5000
+42 gMorphEnds v1 | Gamma morph ends | range 0.0000..1.0000 step 1.0000 | default 0.0000 | mid 0.0000 | choices LP-HP;BP
+43 gWidth v1 | Gamma width | range 0.0000..1.0000 step 0.0000 | default 0.3500 | mid 0.5000
+44 gLevel v1 | Gamma level | range -60.0000..6.0000 step 0.0000 | default -12.0000 | mid -17.2043
+45 dMode v1 | Delta mode | range 0.0000..2.0000 step 1.0000 | default 0.0000 | mid 1.0000 | choices Filter;Res;Osc
+46 dGain v1 | Delta gain | range -60.0000..12.0000 step 0.0000 | default 0.0000 | mid -3.7889
+47 dInLimit v1 | Delta in limit | range 0.0000..1.0000 step 1.0000 | default 0.0000 | mid 1.0000 | switch
+48 dCoarse v1 | Delta coarse | range 16.0000..20000.0000 step 0.0000 | default 1760.0000 | mid 565.6854
+49 dFine v1 | Delta fine | range -100.0000..100.0000 step 0.0000 | default 0.0000 | mid 0.0000
+50 dQ v1 | Delta Q | range 0.5000..50.0000 step 0.0000 | default 2.0000 | mid 5.0000
+51 dOutLimit v1 | Delta out limit | range 0.0000..1.0000 step 1.0000 | default 0.0000 | mid 1.0000 | switch
+52 dKeyTrack v1 | Delta key track | range 0.0000..1.0000 step 1.0000 | default 1.0000 | mid 1.0000 | switch
+53 dTap v1 | Delta output tap | range 0.0000..4.0000 step 1.0000 | default 0.0000 | mid 2.0000 | choices Stereo morph;LP;BP;HP;Notch
+54 dStrike v1 | Delta strike | range 0.0000..1.0000 step 1.0000 | default 1.0000 | mid 1.0000 | switch
+55 dFmAmt v1 | Delta FM amount | range -1.0000..1.0000 step 0.0000 | default 0.0000 | mid 0.0000
+56 dMorph v1 | Delta morph | range 0.0000..1.0000 step 0.0000 | default 0.5000 | mid 0.5000
+57 dMorphEnds v1 | Delta morph ends | range 0.0000..1.0000 step 1.0000 | default 0.0000 | mid 0.0000 | choices LP-HP;BP
+58 dWidth v1 | Delta width | range 0.0000..1.0000 step 0.0000 | default 0.3500 | mid 0.5000
+59 dLevel v1 | Delta level | range -60.0000..6.0000 step 0.0000 | default -12.0000 | mid -17.2043
+60 masterLimit v1 | Master limit | range 0.0000..1.0000 step 1.0000 | default 0.0000 | mid 1.0000 | switch
+61 linkAB v1 | Link alpha to beta | range 0.0000..1.0000 step 1.0000 | default 0.0000 | mid 1.0000 | switch
+62 linkGD v1 | Link delta to gamma | range 0.0000..1.0000 step 1.0000 | default 0.0000 | mid 1.0000 | switch
+63 offset v1 | Offset | range -1.0000..1.0000 step 0.0000 | default 0.0000 | mid 0.0000
+64 pitchSplit v1 | Pitch gamma-delta | range 0.0000..1.0000 step 1.0000 | default 0.0000 | mid 0.0000 | choices All;Split
+65 lfoRate v1 | Rate | range 0.0100..20.0000 step 0.0000 | default 0.2000 | mid 0.4472
+66 busA v1 | LFO Alpha bus | range 0.0000..2.0000 step 1.0000 | default 0.0000 | mid 1.0000 | choices Width;FM;Anim
+67 busB v1 | LFO Beta bus | range 0.0000..2.0000 step 1.0000 | default 0.0000 | mid 1.0000 | choices Width;FM;Anim
+68 busG v1 | LFO Gamma bus | range 0.0000..2.0000 step 1.0000 | default 0.0000 | mid 1.0000 | choices Width;FM;Anim
+69 busD v1 | LFO Delta bus | range 0.0000..2.0000 step 1.0000 | default 0.0000 | mid 1.0000 | choices Width;FM;Anim
+70 stereoMode v1 | Stereo | range 0.0000..1.0000 step 1.0000 | default 0.0000 | mid 0.0000 | choices Sum;Über
+71 pitchSnap v1 | Pitch Snap | range 0.0000..2.0000 step 1.0000 | default 0.0000 | mid 1.0000 | choices Off;Semitones;Steps
+72 pitchScale v1 | Pitch Scale | range 0.0000..28.0000 step 1.0000 | default 0.0000 | mid 14.0000 | choices Off;Major (Ionian);Dorian;Phrygian;Lydian;Mixolydian;Aeolian (Natural Minor);Locrian;Harmonic Minor;Melodic Minor;Harmonic Major;Hungarian Minor;Phrygian Dominant;Double Harmonic (Byzantine);Neapolitan Minor;Neapolitan Major;Enigmatic;Major Pentatonic;Minor Pentatonic;Blues;Hirajoshi;In Sen;Kumoi;Iwato;Whole Tone;Octatonic (Whole-Half);Octatonic (Half-Whole);Prometheus;Chromatic
+73 pitchKey v1 | Key | range 0.0000..11.0000 step 1.0000 | default 0.0000 | mid 6.0000 | choices C;C#;D;D#;E;F;F#;G;G#;A;A#;B
+74 quality v1 | Quality | range 0.0000..2.0000 step 1.0000 | default 1.0000 | mid 1.0000 | choices 2x;4x;8x

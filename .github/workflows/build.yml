@@ -1,0 +1,238 @@
+name: Build PEDWAR
+
+# Runs automatically every time code is pushed, and can also be started by hand
+# from the Actions tab ("Run workflow").
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  engine-test:
+    name: Engine self-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run the engine test
+        run: |
+          set +e
+          ( cmake -S . -B build-test -DPEDWAR_BUILD_PLUGIN=OFF -DCMAKE_BUILD_TYPE=Release \
+            && cmake --build build-test -j 4 \
+            && ctest --test-dir build-test --output-on-failure -V ) > engine-test.log 2>&1
+          code=$?
+          tail -n 40 engine-test.log
+          # Result is also written as annotations (shown on the run page and readable through the API).
+          if [ $code -ne 0 ]; then
+            echo "::error::ENGINE-TEST: failed (exit code $code)"
+            grep -E "error|FAIL|engine tests:" engine-test.log | head -15 | while IFS= read -r line; do echo "::error::ENGINE-TEST: $line"; done
+            exit 1
+          fi
+          echo "::notice::ENGINE-TEST: $(grep -h 'engine tests:' engine-test.log | head -n 1)"
+          echo "::notice::ENGINE-CPU: $(grep -h 'CPU:' engine-test.log | head -n 1)"
+
+  plugin-check:
+    name: Plugin-layer check (no host)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run PedwarCheck and PedwarSynthCheck
+        run: |
+          set +e
+          ( sudo apt-get update \
+            && sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxext-dev \
+                 libfreetype-dev libfontconfig1-dev libgl1-mesa-dev \
+            && cmake -S . -B build-check -DPEDWAR_BUILD_PLUGIN=OFF -DPEDWAR_BUILD_CHECK=ON -DCMAKE_BUILD_TYPE=Release \
+            && cmake --build build-check --target PedwarCheck PedwarSynthCheck -j 4 \
+            && for name in PedwarCheck PedwarSynthCheck; do \
+                 BIN=$(find build-check -type f -name "$name" -perm -u+x | head -n 1); \
+                 echo "running $BIN"; "$BIN" || exit 1; \
+               done ) > plugin-check.log 2>&1
+          code=$?
+          tail -n 30 plugin-check.log
+          if [ $code -ne 0 ]; then
+            echo "::error::PLUGIN-CHECK: failed (exit code $code)"
+            grep -E "error|FAIL|plugin checks" plugin-check.log | head -15 | while IFS= read -r line; do echo "::error::PLUGIN-CHECK: $line"; done
+            exit 1
+          fi
+          grep -h 'plugin checks' plugin-check.log | while IFS= read -r line; do echo "::notice::PLUGIN-CHECK: $line"; done
+
+  build-macos:
+    name: Build AU + VST3 (macOS)
+    runs-on: macos-26     # Apple silicon runner; macos-14 is retired by GitHub on 2 Nov 2026
+    permissions:
+      contents: write     # only to put the finished package into a private draft release (last step)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          set +e
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release > configure.log 2>&1; code=$?
+          tail -n 20 configure.log
+          if [ $code -ne 0 ]; then
+            echo "::error::CONFIGURE: failed (exit code $code)"
+            grep -iE "error" configure.log | head -10 | while IFS= read -r line; do echo "::error::CONFIGURE: $line"; done
+            exit 1
+          fi
+
+      - name: Build AU and VST3 (PEDWAR and PEDWAR Synth)
+        run: |
+          set +e
+          cmake --build build --config Release --target Pedwar_AU Pedwar_VST3 PedwarSynth_AU PedwarSynth_VST3 -j 4 > build.log 2>&1; code=$?
+          tail -n 30 build.log
+          if [ $code -ne 0 ]; then
+            echo "::error::BUILD: failed (exit code $code)"
+            grep -E "error:|Error " build.log | head -15 | while IFS= read -r line; do echo "::error::BUILD: $line"; done
+            exit 1
+          fi
+          echo "::notice::BUILD: AU and VST3 compiled (PEDWAR and PEDWAR Synth)"
+
+      - name: Locate the built plugins
+        id: find
+        run: |
+          FX_AU=$(find build -type d -name "PEDWAR.component" | head -n 1)
+          FX_VST3=$(find build -type d -name "PEDWAR.vst3" | head -n 1)
+          SY_AU=$(find build -type d -name "PEDWAR Synth.component" | head -n 1)
+          SY_VST3=$(find build -type d -name "PEDWAR Synth.vst3" | head -n 1)
+          echo "PEDWAR AU:         $FX_AU"
+          echo "PEDWAR VST3:       $FX_VST3"
+          echo "PEDWAR Synth AU:   $SY_AU"
+          echo "PEDWAR Synth VST3: $SY_VST3"
+          for b in "$FX_AU" "$FX_VST3" "$SY_AU" "$SY_VST3"; do test -n "$b" || { echo "a bundle was not found"; exit 1; }; done
+          echo "fx_au=$FX_AU"     >> "$GITHUB_OUTPUT"
+          echo "fx_vst3=$FX_VST3" >> "$GITHUB_OUTPUT"
+          echo "sy_au=$SY_AU"     >> "$GITHUB_OUTPUT"
+          echo "sy_vst3=$SY_VST3" >> "$GITHUB_OUTPUT"
+
+      - name: Check the build is universal (Apple Silicon + Intel)
+        run: |
+          lipo -archs "${{ steps.find.outputs.fx_au }}/Contents/MacOS/PEDWAR"
+          lipo -archs "${{ steps.find.outputs.fx_vst3 }}/Contents/MacOS/PEDWAR"
+          lipo -archs "${{ steps.find.outputs.sy_au }}/Contents/MacOS/PEDWAR Synth"
+          lipo -archs "${{ steps.find.outputs.sy_vst3 }}/Contents/MacOS/PEDWAR Synth"
+
+      - name: Sign (ad-hoc, so Apple Silicon Macs will load it)
+        run: |
+          for b in "${{ steps.find.outputs.fx_au }}" "${{ steps.find.outputs.fx_vst3 }}" "${{ steps.find.outputs.sy_au }}" "${{ steps.find.outputs.sy_vst3 }}"; do
+            codesign --force --deep --sign - "$b"
+            codesign --verify --deep --strict --verbose=2 "$b"
+          done
+
+      - name: Apple's AU validator (auval)
+        continue-on-error: true
+        run: |
+          mkdir -p "$HOME/Library/Audio/Plug-Ins/Components"
+          cp -R "${{ steps.find.outputs.fx_au }}" "$HOME/Library/Audio/Plug-Ins/Components/"
+          cp -R "${{ steps.find.outputs.sy_au }}" "$HOME/Library/Audio/Plug-Ins/Components/"
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          sleep 3
+          failed=0
+          # PEDWAR is a MIDI-controlled effect (aumf); PEDWAR Synth is an instrument (aumu).
+          for spec in "aumf Pdwr Pdot auval-PEDWAR.log" "aumu PdwS Pdot auval-PEDWAR-Synth.log"; do
+            set -- $spec
+            auval -v $1 $2 $3 > "$4" 2>&1; code=$?
+            tail -n 20 "$4"
+            # Result is also written as annotations (shown on the run page and readable through the API).
+            if grep -q "AU VALIDATION SUCCEEDED" "$4"; then
+              echo "::notice::AUVAL $1 $2: AU VALIDATION SUCCEEDED"
+            else
+              echo "::error::AUVAL $1 $2: did not succeed (auval exit code $code)"
+              grep -iE "fail|error|cannot|not found" "$4" | head -8 | while IFS= read -r line; do echo "::error::AUVAL $2: $line"; done
+              failed=1
+            fi
+          done
+          exit $failed
+
+      # pluginval (Tracktion's open-source plugin validator) checks the AU and the VST3 the way hosts use them: loading,
+      # parameters, saving and restoring state, different buffer sizes and sample rates. It never fails the build;
+      # its verdict is written as annotations and as logs inside the package.
+      - name: pluginval (AU and VST3, both plugins)
+        continue-on-error: true
+        timeout-minutes: 40
+        run: |
+          set +e
+          curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
+          unzip -q -o pluginval.zip -d pluginval-bin
+          PV="$(find pluginval-bin -type f -name pluginval -perm -u+x | head -n 1)"
+          echo "pluginval binary: $PV"
+          test -n "$PV" || { echo "::warning::PLUGINVAL: could not download pluginval"; exit 0; }
+          "$PV" --version 2>&1 | head -n 1 | while IFS= read -r line; do echo "::notice::PLUGINVAL version: $line"; done
+          C="$HOME/Library/Audio/Plug-Ins/Components"
+          for kind in PEDWAR-AU PEDWAR-VST3 PEDWAR-Synth-AU PEDWAR-Synth-VST3; do
+            case $kind in
+              PEDWAR-AU)         TARGET="$C/PEDWAR.component" ;;
+              PEDWAR-VST3)       TARGET="${{ steps.find.outputs.fx_vst3 }}" ;;
+              PEDWAR-Synth-AU)   TARGET="$C/PEDWAR Synth.component" ;;
+              PEDWAR-Synth-VST3) TARGET="${{ steps.find.outputs.sy_vst3 }}" ;;
+            esac
+            "$PV" --strictness-level 5 "$TARGET" > "pluginval-$kind.log" 2>&1; code=$?
+            tail -n 25 "pluginval-$kind.log"
+            if [ $code -eq 0 ]; then
+              echo "::notice::PLUGINVAL $kind: passed at strictness level 5"
+            else
+              echo "::error::PLUGINVAL $kind: failed (exit code $code)"
+              grep -iE "fail|error|crash|assert" "pluginval-$kind.log" | head -12 | while IFS= read -r line; do echo "::error::PLUGINVAL $kind: $line"; done
+            fi
+          done
+          exit 0
+
+      - name: Package
+        run: |
+          mkdir -p PEDWAR-macOS
+          cp -R "${{ steps.find.outputs.fx_au }}"   PEDWAR-macOS/
+          cp -R "${{ steps.find.outputs.fx_vst3 }}" PEDWAR-macOS/
+          cp -R "${{ steps.find.outputs.sy_au }}"   PEDWAR-macOS/
+          cp -R "${{ steps.find.outputs.sy_vst3 }}" PEDWAR-macOS/
+          cp auval-PEDWAR.log auval-PEDWAR-Synth.log PEDWAR-macOS/ 2>/dev/null || true
+          cp pluginval-*.log PEDWAR-macOS/ 2>/dev/null || true
+          cat > PEDWAR-macOS/INSTALL.txt <<'TXT'
+          PEDWAR and PEDWAR Synth (particledots). Two plugins from the same engine:
+            PEDWAR        an audio effect played by MIDI: put it in an Audio FX slot of any track.
+                          MIDI reaches it through the side-chain MIDI menu at the top of its plug-in window.
+            PEDWAR Synth  an instrument: use it on a Software Instrument track.
+
+          1. Unzip.
+          2. Open Terminal and run:   xattr -dr com.apple.quarantine ~/Downloads/PEDWAR-macOS/*
+             (adjust the path if you unzipped elsewhere; this clears the "downloaded from internet" block)
+          3. Copy "PEDWAR.component" and "PEDWAR Synth.component"  to  ~/Library/Audio/Plug-Ins/Components/
+             Copy "PEDWAR.vst3" and "PEDWAR Synth.vst3"            to  ~/Library/Audio/Plug-Ins/VST3/
+          4. In Logic: Settings > Plug-in Manager > rescan. Look under Audio Units > particledots:
+             PEDWAR (in an Audio FX slot) and PEDWAR Synth (on a Software Instrument track).
+          TXT
+          # Easy installer for Logic (double-click; same file in every plugin). It installs every .component it finds.
+          cp tools/install/Install-Unofficial-Plugin.command PEDWAR-macOS/
+          chmod +x PEDWAR-macOS/Install-Unofficial-Plugin.command
+          printf '\nEASY INSTALL (Logic, Audio Unit): double-click Install-Unofficial-Plugin.command in this folder. It installs both plugins and asks for your Mac password once.\n' >> PEDWAR-macOS/INSTALL.txt
+          [ -x PEDWAR-macOS/Install-Unofficial-Plugin.command ] || { echo "::error::PACKAGE missing Install-Unofficial-Plugin.command"; exit 1; }
+          ditto -c -k --keepParent PEDWAR-macOS PEDWAR-macOS.zip
+          ls -l PEDWAR-macOS PEDWAR-macOS.zip
+          # Package contents are also written as annotations (readable through the API).
+          echo "::notice::PACKAGE archs: PEDWAR $(lipo -archs PEDWAR-macOS/PEDWAR.component/Contents/MacOS/PEDWAR), PEDWAR Synth $(lipo -archs "PEDWAR-macOS/PEDWAR Synth.component/Contents/MacOS/PEDWAR Synth")"
+          unzip -Z PEDWAR-macOS.zip | grep -E "Install-Unofficial|INSTALL.txt|auval-|Contents/MacOS/PEDWAR" | while IFS= read -r line; do echo "::notice::ZIP: $line"; done
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: PEDWAR-macOS
+          path: PEDWAR-macOS.zip
+          if-no-files-found: error
+
+      # A second way to get the package, besides the Actions page: a private DRAFT release (only people with
+      # access to the repo can see it) holding the same zip. Older drafts of this kind are removed first.
+      # A failure here never fails the build.
+      - name: Private draft release with the package
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for id in $(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq '.[] | select(.draft and (.name | startswith("PEDWAR test build"))) | .id'); do
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id"
+          done
+          gh release create "test-build-${GITHUB_RUN_NUMBER}" PEDWAR-macOS.zip --draft --target "$GITHUB_SHA" \
+            --title "PEDWAR test build ${GITHUB_RUN_NUMBER} (${GITHUB_SHA::7})" \
+            --notes "Same package as the PEDWAR-macOS artifact of this run. Draft: not public."
+          echo "::notice::DRAFT-RELEASE: created test-build-${GITHUB_RUN_NUMBER}"
