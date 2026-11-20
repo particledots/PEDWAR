@@ -6,7 +6,7 @@ ceithir (a quad state-variable filter / resonator). It is not a copy, contains n
 affiliated with Instruō. The ceithir is an analog module with no published firmware; its manual was used only to
 understand what the controls do. "Pedwar" is Welsh for "four".
 
-Status: **milestone 1 of 3 (version 0.1.1), built; waiting for a re-test in Logic.**
+Status: **milestone 1 of 3 (version 0.1.1) finished: tested in Logic on the M4 Mac mini (Logic 11.2.2) and the Intel Mac (Logic 10.7.8) on 2026-11-20.**
 
 ## What works (milestone 1)
 
@@ -20,7 +20,7 @@ Signals inside are plus/minus 1 at full scale.
   - **Played by MIDI** (strike, key track): make a **Software Instrument** track, click its instrument slot and choose
     **AU MIDI-controlled Effects > particledots > PEDWAR**. In PEDWAR's **Side Chain** menu (top right of its window)
     choose the audio track to filter, and mute that audio track so only PEDWAR's version is heard (a muted track
-    still feeds the side chain). The notes in the instrument track's regions, or played on the keyboard with that
+    still feeds PEDWAR). The notes in the instrument track's regions, or played on the keyboard with that
     track selected, play PEDWAR. All four filters hear the chosen track.
   - **Plain filter, no MIDI**: put it in an **Audio FX** slot (Audio Units > particledots > PEDWAR). α and β filter
     the track; the Side Chain menu can feed γ and δ another track.
@@ -55,10 +55,11 @@ Signals inside are plus/minus 1 at full scale.
   pushed.
 - **Inputs.** In PEDWAR, α and β take the track audio. γ and δ take Logic's **side chain** while it carries audio,
   and the track audio otherwise (the side chain counts as present until it has been silent for 2 seconds; the change
-  is cross-faded over 20 ms). While the track input has been silent for 2 seconds and the side chain plays, α and β
-  take the side chain too: that is what happens in the instrument slot, where the side chain is the only audio.
-  Under each filter's name, "track in" or "side chain" says what it is hearing; when it is the side chain, the label
-  turns the filter's colour with a dot in front. In PEDWAR Synth there is no track audio: the side chain (if one is
+  is cross-faded over 20 ms). If the track input has been silent for 2 seconds while the side chain plays, α and β
+  take the side chain too. In the instrument slot of a Software Instrument track, Logic delivers the audio you pick in
+  the Side Chain menu on PEDWAR's normal (track) input, as far as the labels in the Logic tests show, so all four
+  filters hear it as "track in". Under each filter's name, "track in" or "side chain" says what it is hearing; when
+  it is the side chain, the label turns the filter's colour with a dot in front. In PEDWAR Synth there is no track audio: the side chain (if one is
   chosen) feeds all four.
 - **The panel** is the approved draft: every control of milestones 2 and 3 is in place, dimmed and tagged M2 or M3.
   The window opens at about 780 x 700 and keeps the draft's proportions when you drag the corner.

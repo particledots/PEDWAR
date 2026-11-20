@@ -1,19 +1,24 @@
 # Changelog
 
-## 0.1.1 — milestone 1 fix (built 2026-11-20, waiting for a re-test in Logic)
+## 0.1.1 — milestone 1 fix (built 2026-11-20; tested in Logic on both Macs, works)
 
 - Logic only sends MIDI to a MIDI-controlled effect loaded in the **instrument slot** of a Software Instrument track
   (AU MIDI-controlled Effects), with the audio to filter chosen in its Side Chain menu; nothing in an Audio FX slot
   gets MIDI. The README and INSTALL.txt now describe that set-up instead of a "side-chain MIDI menu", which does not
   exist for third-party effects.
-- In that set-up the track input is silent, so α and β now also take the side chain while the track input has been
-  silent for 2 seconds (γ and δ already did). All four filters hear the chosen track.
+- α and β now also take the side chain while the track input has been silent for 2 seconds (γ and δ already did),
+  as a safety net. In the Logic tests, the audio picked in the Side Chain menu of the instrument slot reached all four
+  filters (on the track input, judging by the labels, which stayed on "track in").
 - The input label under each filter's name now clearly shows what the filter hears: "side chain" in the filter's
   colour with a dot while it takes the side chain (it was only a slightly lighter grey).
+- Logic test results (M4 Mac mini, Logic 11.2.2, and Intel Mac, Logic 10.7.8; same on both): PEDWAR loads from AU
+  MIDI-controlled Effects in a Software Instrument track's instrument slot; the track chosen in the Side Chain menu is
+  heard through PEDWAR; every MIDI note strikes the filter and flashes the strike light; clicking the light (empty
+  ring) stops the strike. Milestone 1 finished.
 - Engine self-test and plugin-layer check: new checks for the instrument-slot routing and the labels' state.
   No control or saved setting changed.
 
-## 0.1.0 — milestone 1 (built 2026-11-19, waiting for a test in Logic)
+## 0.1.0 — milestone 1 (built 2026-11-19; superseded by 0.1.1)
 
 - First build: repo layout, build workflow (engine self-test, plugin-layer check, universal AU + VST3 for both plugins,
   ad-hoc signing, auval, pluginval, package with installer and INSTALL.txt, private draft release), same installer as
