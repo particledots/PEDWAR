@@ -120,7 +120,7 @@ static void testState()
     CHECK (block.getSize() > 100, "state saved");
     {
         auto xml = juce::AudioProcessor::getXmlFromBinary (block.getData(), (int) block.getSize());
-        CHECK (xml != nullptr && xml->getStringAttribute ("pluginVersion") == "0.1.0", "version stored");
+        CHECK (xml != nullptr && xml->getStringAttribute ("pluginVersion") == JucePlugin_VersionString, "version stored");
         CHECK (xml != nullptr && xml->hasAttribute ("preset"), "preset entry stored");
     }
     PedwarAudioProcessor b;
