@@ -6,7 +6,8 @@
 //   3. Init resets every control except Pitch Snap, Scale, Key and Quality.
 //   4. Audio through processBlock: track input, side chain, MIDI strikes and key tracking, the bus layouts Logic uses,
 //      the latency.
-//   5. The panel opens at the draft's proportions, every control is there, later-milestone controls are dimmed.
+//   5. The panel opens at the draft's proportions, every control is there, milestone 3 controls are dimmed, the
+//      modulation rings follow the LFOs.
 //   6. Heavy random automation through the parameters stays finite and bounded.
 //
 // The build workflow runs both programs on every push and fails if any check fails.
@@ -322,6 +323,78 @@ static void testAudio()
     }
 }
 
+// ------------------------------------------------------------------------------------------------ 4b. milestone 2
+
+static void testMilestone2()
+{
+    using namespace PdParams;
+    // Width: 0 -> both sides the same; 100% -> alpha's right side differs (the all-pass copy). The sound is alpha
+    // oscillating (Osc mode), so the check is the same in both plugins.
+    {
+        Rig r (false);
+        for (int k = 0; k < numFilters; ++k) setReal (r.proc, id (k, Level), k == 0 ? 0.0f : -60.0f);
+        setReal (r.proc, id (0, Mode), 2.0f);
+        setReal (r.proc, id (0, Coarse), 300.0f);
+        setReal (r.proc, id (0, Q), 0.7071f);
+        setReal (r.proc, id (0, Morph), 0.0f);       // fully left: low-pass
+        setReal (r.proc, id (0, Width), 0.0f);
+        long pos = 0;
+        double diff0 = 0.0, diff1 = 0.0;
+        for (int b = 0; b < 40; ++b)
+        {
+            const int ch = juce::jmax (2, r.inCh);
+            juce::AudioBuffer<float> buf (ch, 512);
+            buf.clear();
+            juce::MidiBuffer midi;
+            r.proc.processBlock (buf, midi);
+            pos += 512;
+            if (b == 20) setReal (r.proc, id (0, Width), 1.0f);
+            if (b > 10 && b < 20) for (int i = 0; i < 512; ++i) diff0 = std::max (diff0, (double) std::fabs (buf.getSample (0, i) - buf.getSample (1, i)));
+            if (b > 30) for (int i = 0; i < 512; ++i) diff1 = std::max (diff1, (double) std::fabs (buf.getSample (0, i) - buf.getSample (1, i)));
+        }
+        CHECK (diff0 < 1e-5, "Width 0: left = right (%g)", diff0);
+        CHECK (diff1 > 0.02, "Width 100%%: right side is the all-pass copy (%g)", diff1);
+    }
+    // Link, Offset, Pitch split and the bus grid reach the engine through the controls
+    {
+        Rig r (false);
+        for (int k = 0; k < numFilters; ++k) { setReal (r.proc, id (k, KeyTrack), 0.0f); setReal (r.proc, id (k, Coarse), 220.0f); }
+        auto settle = [&r] { long pos = 0; r.runFor (0.2, nullptr, nullptr, pos); };
+        settle();
+        CHECK (std::fabs (r.proc.getEngine().playedHz (1) - 220.0f) < 0.5f, "beta at its own 220 Hz");
+        setReal (r.proc, linkAB, 1.0f);              // alpha is one octave above its default 110 Hz
+        settle();
+        CHECK (std::fabs (r.proc.getEngine().playedHz (1) - 440.0f) < 0.5f, "Link: beta follows alpha (%.1f Hz)", r.proc.getEngine().playedHz (1));
+        setReal (r.proc, linkAB, 0.0f);
+        setReal (r.proc, offset, 0.5f);              // +6 semitones
+        settle();
+        CHECK (std::fabs (r.proc.getEngine().playedHz (3) - 311.127f) < 0.5f, "Offset +6 st (%.1f Hz)", r.proc.getEngine().playedHz (3));
+        setReal (r.proc, offset, 0.0f);
+        for (int k = 0; k < numFilters; ++k) setReal (r.proc, id (k, KeyTrack), 1.0f);
+        setReal (r.proc, pitchSplit, 1.0f);
+        juce::MidiBuffer midi;
+        midi.addEvent (juce::MidiMessage::noteOn (1, 48, (juce::uint8) 100), 0);
+        r.run (512, 0, nullptr, nullptr, midi);
+        settle();
+        CHECK (std::fabs (r.proc.getEngine().playedHz (2) - 110.0f) < 0.5f && std::fabs (r.proc.getEngine().playedHz (0) - 220.0f) < 0.5f,
+               "Pitch split: C3 moves gamma (%.1f Hz), not alpha (%.1f Hz)", r.proc.getEngine().playedHz (2), r.proc.getEngine().playedHz (0));
+        setReal (r.proc, busIds[1], 1.0f);           // beta's LFO on FM: moves alpha
+        setReal (r.proc, id (0, FmAmt), -1.0f);
+        settle();
+        CHECK (std::fabs (r.proc.getEngine().modDepth (0, pedwar::Engine::ModCoarse) - 3.0f) < 0.01f, "bus grid: beta's LFO on FM moves alpha +-3 octaves");
+        CHECK (r.proc.getEngine().modDepth (3, pedwar::Engine::ModCoarse) < 1.0e-6f, "bus grid: delta not moved");
+    }
+    // the Morph readout
+    {
+        PedwarAudioProcessor p;
+        auto* m = p.getValueTreeState().getParameter (id (0, Morph));
+        const juce::String x = juce::String::fromUTF8 ("\xc3\x97");
+        CHECK (m->getText (0.5f, 20) == x + "1" && m->getText (0.1f, 20) == x + "4" && m->getText (0.9f, 20) == x + juce::String::fromUTF8 ("\xc2\xbc"),
+               "Morph readout x4 .. x1 .. x1/4 (%s)", m->getText (0.1f, 20).toRawUTF8());
+        CHECK (m->getText (0.0f, 20) == "LP" && m->getText (1.0f, 20) == "HP / BP", "Morph readout at the ends");
+    }
+}
+
 // ------------------------------------------------------------------------------------------------ 5. panel
 
 static void testPanel (const juce::File& snapDir)
@@ -345,11 +418,38 @@ static void testPanel (const juce::File& snapDir)
             CHECK (c->getAlpha() < 0.5f, "a disabled control is dimmed");
         }
     }
-    // live: 4 x (mode, gain, in limit, coarse, fine, Q, out limit, key trk, tap, strike) + 4 levels + master limit = 45
-    // dimmed: 4 x (FM, morph, width, morph ends) + 2 links + offset, split, rate, grid + stereo, snap, scale, key
-    //         + preset, quality = 28
-    CHECK (enabled == 45, "%d live controls", enabled);
-    CHECK (dimmed == 28, "%d dimmed controls", dimmed);
+    // live: 4 x (mode, gain, in limit, coarse, fine, Q, FM, morph, width, morph ends, out limit, key trk, tap, strike)
+    //       + 2 links + offset, split, rate, grid + 4 levels + master limit = 67
+    // dimmed (milestone 3): stereo, snap, scale, key, preset, quality = 6
+    CHECK (enabled == 67, "%d live controls", enabled);
+    CHECK (dimmed == 6, "%d dimmed controls", dimmed);
+
+    // Modulation rings: alpha animated (Q and Morph) and moved by beta's LFO (FM): after some audio, the rings of
+    // alpha's Coarse, Q and Morph knobs show a swing; beta's stay off.
+    {
+        setReal (proc, PdParams::busIds[0], 2.0f);       // alpha: anim
+        setReal (proc, PdParams::id (0, PdParams::FmAmt), 0.5f);
+        setReal (proc, PdParams::lfoRate, 5.0f);
+        proc.setRateAndBufferSizeDetails (48000.0, 512);
+        proc.prepareToPlay (48000.0, 512);
+        juce::AudioBuffer<float> buf (juce::jmax (2, proc.getTotalNumInputChannels()), 512);
+        juce::MidiBuffer midi;
+        for (int b = 0; b < 40; ++b) { buf.clear(); proc.processBlock (buf, midi); }
+        int ringsOn = 0, ringsOff = 0;
+        std::function<void (juce::Component&)> visit = [&] (juce::Component& c)
+        {
+            if (auto* k = dynamic_cast<PdKnob*> (&c))
+            {
+                k->refreshModulation();
+                const auto m = k->shownModulation();
+                if (m.depth > 0.01f) ++ringsOn; else ++ringsOff;
+            }
+            for (auto* ch : c.getChildren()) visit (*ch);
+        };
+        visit (*panel);
+        CHECK (ringsOn == 3, "modulation rings showing: %d (alpha's coarse, Q, morph)", ringsOn);
+        CHECK (proc.getEngine().modDepth (0, pedwar::Engine::ModCoarse) > 1.4f, "alpha's FM depth reaches the panel");
+    }
 
     const auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
     CHECK (img.isValid(), "panel draws");
@@ -408,6 +508,7 @@ int main (int argc, char** argv)
     if (writeGolden) return 0;
     testState();
     testAudio();
+    testMilestone2();
     testPanel (snapDir);
     testAutomation();
     std::printf ("plugin checks (%s): %d checks, %d failed\n", kWhich, checks, failures);

@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <complex>
+#include <memory>
 #include <cstdio>
 #include <functional>
 #include <random>
@@ -196,9 +198,9 @@ static void testResponses()
     CHECK (std::fabs (db (gainAt (TapLP, 500, 8.0, 500)) - db (8.0)) < 0.4, "LP peak = Q (%.2f dB)", db (gainAt (TapLP, 500, 8.0, 500)));
     CHECK (std::fabs (db (gainAt (TapBP, 500, 8.0, 500)) - db (8.0)) < 0.4, "BP peak = Q");
     CHECK (db (gainAt (TapBP, 500, 8.0, 4000)) < -15.0, "BP falls off 6 dB/oct: %.1f", db (gainAt (TapBP, 500, 8.0, 4000)));
-    // notch: deep at the centre, flat away from it; "stereo morph" is the same notch until milestone 2
+    // notch: deep at the centre, flat away from it; "stereo morph" at x1 (its default) is the same notch
     CHECK (db (gainAt (TapNotch, 2000, 1.0, 2000)) < -40.0, "notch deep: %.1f dB", db (gainAt (TapNotch, 2000, 1.0, 2000)));
-    CHECK (db (gainAt (TapMorph, 2000, 1.0, 2000)) < -40.0, "stereo morph = notch in milestone 1");
+    CHECK (db (gainAt (TapMorph, 2000, 1.0, 2000)) < -40.0, "stereo morph at x1 = notch");
     CHECK (std::fabs (db (gainAt (TapNotch, 2000, 1.0, 100))) < 0.3, "notch flat far away");
     // the cutoff is right at the top of the range too
     CHECK (std::fabs (db (gainAt (TapLP, 15000, 0.7071, 15000)) + 3.01) < 0.6, "LP -3 dB at 15 kHz: %.2f", db (gainAt (TapLP, 15000, 0.7071, 15000)));
@@ -227,7 +229,7 @@ static void testOscillation()
             const double thd = db (std::sqrt (h) / toneAmp (o.l, hz, from));
             CHECK (thd < -50.0, "Osc %.0f Hz is a clean sine: harmonics %.1f dB", hz, thd);
         }
-        CHECK (std::fabs (o.l[from] - o.r[from]) < 1e-6f, "both sides the same in milestone 1");
+        CHECK (std::fabs (o.l[from] - o.r[from]) < 1e-6f, "LP tap: both sides the same");
     }
     // Res mode: oscillates at Q 50, not at Q 5 (no input)
     {
@@ -486,8 +488,12 @@ static void testAutomationStress()
                     f.mode = pick (3); f.gainDb = u (-60, 12); f.inLimit = pick (2); f.coarseHz = 16.0f * std::pow (1250.0f, u (0, 1));
                     f.fineCents = u (-100, 100); f.q = 0.5f * std::pow (100.0f, u (0, 1)); f.outLimit = limited || pick (2);
                     f.keyTrack = pick (2); f.tap = pick (5); f.strike = pick (2); f.levelDb = u (-60, 6);
+                    f.fmAmt = u (-1, 1); f.morph = u (0, 1); f.morphEnds = pick (2); f.width = u (0, 1);
                 }
                 p.masterLimit = limited || pick (2);
+                p.linkAB = pick (2); p.linkGD = pick (2); p.offset = u (-1, 1); p.pitchSplit = pick (2);
+                p.lfoRate = 0.01f * std::pow (2000.0f, u (0, 1));
+                for (auto& b : p.bus) b = pick (3);
                 if (pick (8) == 0) e.noteOn (pick (128), u (0, 1));
                 if (pick (8) == 0) e.noteOff (pick (128));
                 for (int i = 0; i < 32; ++i, ++n)
@@ -504,7 +510,9 @@ static void testAutomationStress()
                 }
             }
             CHECK (finite, "random automation at %.0f Hz: finite", rate);
-            if (limited) CHECK (mx < 1.1, "random automation, all limiters on, at %.0f Hz: peak %.3f", rate, mx);
+            // (the limiters hold the oversampled signal at 1.0; the steep down-sampling filter may ring a little above it
+            // when everything jumps every 32 samples)
+            if (limited) CHECK (mx < 1.2, "random automation, all limiters on, at %.0f Hz: peak %.3f", rate, mx);
             else         CHECK (mx < 40.0, "random automation at %.0f Hz: bounded, peak %.2f", rate, mx);
         }
     }
@@ -530,15 +538,379 @@ static void testAutomationStress()
     }
 }
 
+// ------------------------------------------------------------------------------------------------ milestone 2
+
+// The complex amplitude of the component at 'hz' (Hann window), for phase comparisons.
+static std::complex<double> toneC (const std::vector<float>& v, double hz, size_t from, size_t to = 0)
+{
+    if (to == 0 || to > v.size()) to = v.size();
+    const size_t n = to - from;
+    const double w = 2.0 * kPi * hz / gSr;
+    std::complex<double> acc (0.0, 0.0);
+    for (size_t i = 0; i < n; ++i)
+    {
+        const double win = 0.5 - 0.5 * std::cos (2.0 * kPi * (double) i / (double) (n - 1));
+        acc += (double) v[from + i] * win * std::polar (1.0, -w * (double) (from + i));
+    }
+    return acc * (4.0 / (double) n);
+}
+static double phaseDeg (std::complex<double> a, std::complex<double> b)   // angle of a relative to b, -180..180
+{
+    return std::arg (a / b) * 180.0 / kPi;
+}
+
+// Frequency of a self-oscillating filter, measured over short windows.
+static std::vector<double> pitchTrack (const std::vector<float>& v, size_t from, double windowSec)
+{
+    std::vector<double> r;
+    const size_t w = (size_t) (windowSec * gSr);
+    for (size_t a = from; a + w <= v.size(); a += w)
+    {
+        std::vector<float> seg (v.begin() + (long) a, v.begin() + (long) (a + w));
+        const double f = risingCrossingsHz (seg, 0);
+        if (f > 0.0) r.push_back (f);
+    }
+    return r;
+}
+
+static Params morphSolo (float morph, int ends, float width, double fc = 1000.0, double q = 0.7071)
+{
+    Params p = solo (Alpha);
+    p.f[0].coarseHz = (float) fc; p.f[0].q = (float) q; p.f[0].tap = TapMorph;
+    p.f[0].morph = morph; p.f[0].morphEnds = ends; p.f[0].width = width;
+    return p;
+}
+static double morphGain (float morph, int ends, double hz, double fc = 1000.0)
+{
+    Params p = morphSolo (morph, ends, 0.0f, fc);
+    Engine e; e.setParams (p); e.prepare (gSr, kBlock);
+    const auto o = render (e, p, 1.0, sine (hz, 0.05));
+    return toneAmp (o.l, hz, (size_t) (0.5 * gSr)) / 0.05;
+}
+
+static void testMorph()
+{
+    // the weights and the readout's multiples
+    auto near = [] (MorphWeights w, float lp, float hp, float bp) { return std::fabs (w.lp - lp) < 1e-4f && std::fabs (w.hp - hp) < 1e-4f && std::fabs (w.bp - bp) < 1e-4f; };
+    CHECK (near (morphWeights (0.5f, 0.0f), 1, 1, 0), "Morph x1 = notch (LP + HP)");
+    CHECK (near (morphWeights (0.0f, 0.0f), 1, 0, 0) && near (morphWeights (0.0f, 1.0f), 1, 0, 0), "Morph fully left = LP");
+    CHECK (near (morphWeights (1.0f, 0.0f), 0, 1, 0), "Morph fully right, ends LP-HP = HP");
+    CHECK (near (morphWeights (1.0f, 1.0f), 0, 0, 1), "Morph fully right, ends BP = BP");
+    CHECK (std::fabs (morphMultiple (0.1f) - 4.0f) < 1e-3f && std::fabs (morphMultiple (0.3f) - 2.0f) < 1e-3f
+        && std::fabs (morphMultiple (0.5f) - 1.0f) < 1e-4f && std::fabs (morphMultiple (0.7f) - 0.5f) < 1e-4f
+        && std::fabs (morphMultiple (0.9f) - 0.25f) < 1e-4f, "Morph marks x4 x2 x1 x1/2 x1/4");
+    CHECK (morphMultiple (0.0f) == 0.0f && morphMultiple (1.0f) == -1.0f, "Morph ends marked");
+    {
+        int jumps = 0;
+        MorphWeights prev = morphWeights (0.0f, 0.0f);
+        for (int i = 1; i <= 1000; ++i)
+        {
+            const auto w = morphWeights ((float) i / 1000.0f, 0.0f);
+            if (std::fabs (w.lp - prev.lp) > 0.02f || std::fabs (w.hp - prev.hp) > 0.02f) ++jumps;
+            prev = w;
+        }
+        CHECK (jumps == 0, "Morph moves smoothly over the whole knob (%d jumps)", jumps);
+    }
+    // responses (width 0, so both sides carry the morph signal)
+    CHECK (db (morphGain (0.1f, EndsLpHp, 4000)) < -30.0, "x4: notch at 4 kHz (%.1f dB)", db (morphGain (0.1f, EndsLpHp, 4000)));
+    CHECK (std::fabs (db (morphGain (0.1f, EndsLpHp, 100))) < 0.5, "x4: lows pass at unity (%.2f dB)", db (morphGain (0.1f, EndsLpHp, 100)));
+    CHECK (db (morphGain (0.1f, EndsLpHp, 15000)) < -18.0, "x4: leans low-pass (%.1f dB at 15 kHz)", db (morphGain (0.1f, EndsLpHp, 15000)));
+    CHECK (db (morphGain (0.9f, EndsLpHp, 250)) < -30.0, "x1/4: notch at 250 Hz (%.1f dB)", db (morphGain (0.9f, EndsLpHp, 250)));
+    CHECK (std::fabs (db (morphGain (0.9f, EndsLpHp, 12000))) < 0.5, "x1/4: highs pass at unity");
+    CHECK (db (morphGain (0.9f, EndsLpHp, 40)) < -18.0, "x1/4: leans high-pass (%.1f dB at 40 Hz)", db (morphGain (0.9f, EndsLpHp, 40)));
+    CHECK (std::fabs (db (morphGain (0.0f, EndsLpHp, 1000)) + 3.01) < 0.3 && std::fabs (db (morphGain (0.0f, EndsLpHp, 100))) < 0.2, "fully left: LP");
+    CHECK (std::fabs (db (morphGain (1.0f, EndsLpHp, 1000)) + 3.01) < 0.3 && std::fabs (db (morphGain (1.0f, EndsLpHp, 10000))) < 0.3, "fully right (LP-HP): HP");
+    CHECK (std::fabs (db (morphGain (1.0f, EndsBp, 1000)) + 3.01) < 0.3 && db (morphGain (1.0f, EndsBp, 100)) < -15.0, "fully right (BP): BP");
+
+    // A self-oscillating filter shifts between sine and cosine (BP ends) or turns over (LP-HP ends) across the knob.
+    auto oscL = [] (float morph, int ends)
+    {
+        Params p = morphSolo (morph, ends, 0.0f, 500.0, 2.0);
+        p.f[0].mode = ModeOsc;
+        Engine e; e.setParams (p); e.prepare (gSr, kBlock);
+        return render (e, p, 2.0, silence()).l;
+    };
+    const auto left = oscL (0.0f, EndsBp), bp = oscL (1.0f, EndsBp), hp = oscL (1.0f, EndsLpHp);
+    const size_t from = (size_t) (1.0 * gSr);
+    const auto cL = toneC (left, 500.0, from), cB = toneC (bp, 500.0, from), cH = toneC (hp, 500.0, from);
+    CHECK (std::fabs (std::fabs (phaseDeg (cB, cL)) - 90.0) < 5.0, "BP ends: 90 degrees between the two ends (%.1f)", phaseDeg (cB, cL));
+    CHECK (std::fabs (db (std::abs (cB) / std::abs (cL))) < 1.0, "BP ends: same level at both ends (%.2f dB)", db (std::abs (cB) / std::abs (cL)));
+    CHECK (std::fabs (std::fabs (phaseDeg (cH, cL)) - 180.0) < 5.0, "LP-HP ends: 180 degrees (%.1f)", phaseDeg (cH, cL));
+}
+
+static void testWidth()
+{
+    auto noise = [] { auto r = std::make_shared<std::mt19937> (5); return [r] (long) { return std::uniform_real_distribution<float> (-0.3f, 0.3f) (*r); }; };
+    // width 0: both sides the same
+    {
+        Params p = morphSolo (0.3f, EndsLpHp, 0.0f);
+        Engine e; e.setParams (p); e.prepare (gSr, kBlock);
+        const auto o = render (e, p, 0.5, noise());
+        double d = 0.0;
+        for (size_t i = 0; i < o.l.size(); ++i) d = std::max (d, (double) std::fabs (o.l[i] - o.r[i]));
+        CHECK (d < 1e-6, "width 0: left = right (%g)", d);
+    }
+    // width 100%, all-pass not swept (alpha LFO on FM): alpha's right side is the all-pass copy, same level, turned
+    // 180 degrees at the filter's frequency; gamma's left side is the one
+    for (int f : { (int) Alpha, (int) Gamma })
+    {
+        Params p = solo (f);
+        p.f[f].coarseHz = 1000.0f; p.f[f].q = 0.7071f; p.f[f].tap = TapMorph; p.f[f].morph = 0.0f; p.f[f].width = 1.0f;
+        p.bus[f] = BusFm;
+        Engine e; e.setParams (p); e.prepare (gSr, kBlock);
+        const auto o = render (e, p, 1.0, sine (300, 0.1));
+        const size_t from = (size_t) (0.5 * gSr);
+        const auto& dry = f == Alpha ? o.l : o.r;
+        const auto& wet = f == Alpha ? o.r : o.l;
+        CHECK (std::fabs (db (toneAmp (wet, 300, from) / toneAmp (dry, 300, from))) < 0.3, "width (filter %d): all-pass keeps the level", f);
+        const double ph = phaseDeg (toneC (wet, 300, from), toneC (dry, 300, from));
+        const double expect = -2.0 * 2.0 * std::atan (300.0 / 1000.0) * 180.0 / kPi;   // two first-order stages
+        CHECK (std::fabs (ph - expect) < 3.0, "width (filter %d): all-pass phase %.1f, expected %.1f", f, ph, expect);
+        auto o2 = render (e, p, 0.5, sine (1000, 0.1), nullptr, (long) gSr);
+        CHECK (std::fabs (std::fabs (phaseDeg (toneC (f == Alpha ? o2.r : o2.l, 1000, 4800), toneC (f == Alpha ? o2.l : o2.r, 1000, 4800))) - 180.0) < 3.0,
+               "width (filter %d): 180 degrees at the filter's frequency", f);
+    }
+    // equal power: the blended side keeps the level of the other for broadband sound
+    {
+        Params p = morphSolo (0.5f, EndsLpHp, 0.5f, 2000.0);
+        Engine e; e.setParams (p); e.prepare (gSr, kBlock);
+        const auto o = render (e, p, 2.0, noise());
+        // (the blend is equal-power by its law; how loud the sum is also depends on how alike the two copies are)
+        const double r = db (rms (o.r, 4800) / rms (o.l, 4800));
+        CHECK (std::fabs (r) < 3.0, "width 50%%: blended side within 3 dB of the other (%.2f dB)", r);
+        Params f = p; f.f[0].width = 1.0f;
+        Engine e1; e1.setParams (f); e1.prepare (gSr, kBlock);
+        const auto o1 = render (e1, f, 2.0, noise());
+        CHECK (std::fabs (db (rms (o1.r, 4800) / rms (o1.l, 4800))) < 0.3, "width 100%%: the all-pass copy keeps the level");
+    }
+    // the filter's own LFO sweeps the all-pass (bus "width"); on "FM" it stands still
+    for (int bus : { (int) BusWidth, (int) BusFm })
+    {
+        Params p = morphSolo (0.0f, EndsLpHp, 1.0f);
+        p.lfoRate = 2.0f;
+        p.bus[0] = bus;
+        Engine e; e.setParams (p); e.prepare (gSr, kBlock);
+        const auto o = render (e, p, 2.0, sine (1000, 0.1));
+        double lo = 1e9, hi = -1e9;
+        for (size_t a = (size_t) (0.2 * gSr); a + 2400 <= o.l.size(); a += 2400)
+        {
+            double ph = phaseDeg (toneC (o.r, 1000, a, a + 2400), toneC (o.l, 1000, a, a + 2400));
+            if (ph < 0.0) ph += 360.0;
+            lo = std::min (lo, ph); hi = std::max (hi, ph);
+        }
+        if (bus == BusWidth) CHECK (hi - lo > 120.0, "width bus: the LFO sweeps the stereo phase (%.0f..%.0f)", lo, hi);
+        else                 CHECK (hi - lo < 2.0, "FM bus: the all-pass stands still (%.1f..%.1f)", lo, hi);
+    }
+}
+
+static Params oscSolo (int f, float hz)
+{
+    Params p = solo (f);
+    for (auto& x : p.f) { x.mode = ModeOsc; x.tap = TapLP; x.coarseHz = hz; x.keyTrack = false; }
+    return p;
+}
+static double pitchOf (Engine& e, const Params& p, int f, double seconds = 0.6)
+{
+    Params q = p;
+    for (int k = 0; k < kNumFilters; ++k) q.f[k].levelDb = k == f ? 0.0f : -60.0f;
+    const auto o = render (e, q, seconds, silence());
+    return risingCrossingsHz (o.l, (size_t) (0.3 * gSr));
+}
+
+static void testLfosAndFm()
+{
+    // Rate: the four LFOs run at Rate x 1, 1.127, 0.871, 1.293
+    {
+        Params p; p.lfoRate = 2.0f;
+        Engine e; e.setParams (p); e.prepare (gSr, kBlock);
+        int ups[kNumFilters] = {};
+        float prev[kNumFilters];
+        for (int j = 0; j < kNumFilters; ++j) prev[j] = e.lfoValue (j);
+        std::vector<float> t (64, 0.0f), l (64), r (64);
+        for (long n = 0; n < (long) (20.0 * gSr); n += 64)
+        {
+            e.setParams (p);
+            e.process (t.data(), nullptr, l.data(), r.data(), 64);
+            for (int j = 0; j < kNumFilters; ++j)
+            {
+                const float v = e.lfoValue (j);
+                if (prev[j] < 0.0f && v >= 0.0f) ++ups[j];
+                prev[j] = v;
+            }
+        }
+        for (int j = 0; j < kNumFilters; ++j)
+            CHECK (std::abs (ups[j] - 40.0 * Engine::kLfoRatio[j]) <= 1.0, "LFO %d: %d cycles in 20 s at 2 Hz (expected %.1f)", j, ups[j], 40.0 * Engine::kLfoRatio[j]);
+    }
+    // FM: beta's LFO on "FM" sweeps alpha's cutoff +-1 octave at FM amt 1/3
+    {
+        Params p = oscSolo (Alpha, 440.0f);
+        p.lfoRate = 0.5f; p.bus[1] = BusFm; p.f[0].fmAmt = 1.0f / 3.0f;
+        Engine e; e.setParams (p); e.prepare (gSr, kBlock);
+        const auto o = render (e, p, 5.0, silence());
+        const auto tr = pitchTrack (o.l, (size_t) (0.2 * gSr), 0.02);
+        const double mx = *std::max_element (tr.begin(), tr.end()), mn = *std::min_element (tr.begin(), tr.end());
+        CHECK (cents (mx, 880.0) > -60.0 && cents (mx, 880.0) < 25.0, "FM: up to one octave above (%.1f Hz)", mx);
+        CHECK (cents (mn, 220.0) < 60.0 && cents (mn, 220.0) > -25.0, "FM: down to one octave below (%.1f Hz)", mn);
+        // polarity: beta's LFO starts at 0 heading down
+        auto early = [&] (float amt)
+        {
+            Params q = p; q.f[0].fmAmt = amt;
+            Engine x; x.setParams (q); x.prepare (gSr, kBlock);
+            const auto y = render (x, q, 0.45, silence());
+            return risingCrossingsHz (y.l, (size_t) (0.05 * gSr));
+        };
+        CHECK (early (0.3f) < 430.0 && early (-0.3f) > 450.0, "FM amt polarity (%.1f / %.1f Hz)", early (0.3f), early (-0.3f));
+        p.f[0].fmAmt = 0.0f;
+        Engine z; z.setParams (p); z.prepare (gSr, kBlock);
+        const auto o0 = render (z, p, 2.0, silence());
+        const auto t0 = pitchTrack (o0.l, (size_t) (0.2 * gSr), 0.05);
+        CHECK (cents (*std::max_element (t0.begin(), t0.end()), *std::min_element (t0.begin(), t0.end())) < 3.0, "FM amt 0: steady");
+    }
+    // routing: alpha's LFO on "FM" moves delta, not alpha (each LFO moves the previous filter)
+    {
+        Params p = oscSolo (Alpha, 440.0f);
+        p.lfoRate = 1.0f; p.bus[0] = BusFm;
+        for (auto& f : p.f) f.fmAmt = 0.5f;
+        auto spread = [&] (int f)
+        {
+            Params q = p;
+            for (int k = 0; k < kNumFilters; ++k) q.f[k].levelDb = k == f ? 0.0f : -60.0f;
+            Engine e; e.setParams (q); e.prepare (gSr, kBlock);
+            const auto o = render (e, q, 2.5, silence());
+            const auto t = pitchTrack (o.l, (size_t) (0.2 * gSr), 0.02);
+            return cents (*std::max_element (t.begin(), t.end()), *std::min_element (t.begin(), t.end()));
+        };
+        CHECK (spread (Delta) > 1000.0 && spread (Alpha) < 3.0 && spread (Beta) < 3.0 && spread (Gamma) < 3.0,
+               "FM bus: alpha's LFO moves delta only (%.0f ct; alpha %.1f)", spread (Delta), spread (Alpha));
+    }
+}
+
+static void testAnim()
+{
+    Params p = solo (Alpha);
+    p.f[0].coarseHz = 1000.0f; p.f[0].q = 8.0f; p.f[0].tap = TapBP; p.lfoRate = 1.0f; p.bus[0] = BusAnim;
+    Engine e; e.setParams (p); e.prepare (gSr, kBlock);
+    const auto o = render (e, p, 4.0, sine (1000, 0.02));
+    CHECK (std::fabs (e.modDepth (0, Engine::ModQ) - Engine::kAnimQOctaves) < 1e-3 && std::fabs (e.modDepth (0, Engine::ModMorph) - Engine::kAnimMorph) < 1e-3,
+           "anim: Q and Morph depths shown");
+    CHECK (e.modDepth (0, Engine::ModCoarse) == 0.0f, "anim with FM amt 0: cutoff not moved");
+    CHECK (e.modDepth (1, Engine::ModQ) == 0.0f && e.modDepth (2, Engine::ModMorph) == 0.0f, "anim on alpha only: the others still");
+    double lo = 1e9, hi = 0.0;
+    for (size_t a = (size_t) (0.3 * gSr); a + 2400 <= o.l.size(); a += 2400)
+    {
+        const double v = rms (std::vector<float> (o.l.begin() + (long) a, o.l.begin() + (long) (a + 2400)));
+        lo = std::min (lo, v); hi = std::max (hi, v);
+    }
+    CHECK (db (hi / lo) > 12.0, "anim: Q is moved (band-pass level swings %.1f dB)", db (hi / lo));
+    // anim nudges the LFO's speed
+    Params w = p; w.bus[0] = BusWidth;
+    Engine e2; e2.setParams (w); e2.prepare (gSr, kBlock);
+    render (e2, w, 4.0, sine (1000, 0.02));
+    CHECK (std::fabs (e.lfoValue (0) - e2.lfoValue (0)) > 0.01, "anim: alpha's LFO speed nudged by beta's");
+    CHECK (std::fabs (e.lfoValue (1) - e2.lfoValue (1)) < 1e-6, "beta's LFO untouched");
+}
+
+static void testLinkOffsetSplit()
+{
+    // Link: alpha 1 octave above its default (110 Hz) takes beta 1 octave up too; delta leads gamma the same way
+    {
+        Params p = oscSolo (Beta, 220.0f);
+        p.f[0].coarseHz = 220.0f; p.f[0].fineCents = 50.0f;
+        p.f[3].coarseHz = 3520.0f; p.f[2].coarseHz = 440.0f;
+        Engine e; e.setParams (p); e.prepare (gSr, kBlock);
+        CHECK (std::fabs (cents (pitchOf (e, p, Beta), 220.0)) < 2.0, "link off: beta at its own 220 Hz");
+        p.linkAB = true; p.linkGD = true;
+        const double b = pitchOf (e, p, Beta), g = pitchOf (e, p, Gamma), a = pitchOf (e, p, Alpha);
+        CHECK (std::fabs (cents (b, 440.0 * std::exp2 (50.0 / 1200.0))) < 2.0, "link: beta follows alpha's Coarse and Fine (%.1f Hz)", b);
+        CHECK (std::fabs (cents (g, 880.0)) < 2.0, "link: gamma follows delta (%.1f Hz)", g);
+        CHECK (std::fabs (cents (a, 220.0 * std::exp2 (50.0 / 1200.0))) < 2.0, "link: alpha (the leader) unchanged");
+        // the leader's LFO movement is passed on
+        p.f[0].coarseHz = 110.0f; p.f[0].fineCents = 0.0f; p.f[0].fmAmt = 0.5f; p.bus[1] = BusFm; p.lfoRate = 1.0f;
+        Params q = p;
+        for (int k = 0; k < kNumFilters; ++k) q.f[k].levelDb = k == Beta ? 0.0f : -60.0f;
+        Engine x; x.setParams (q); x.prepare (gSr, kBlock);
+        const auto o = render (x, q, 2.5, silence());
+        const auto t = pitchTrack (o.l, (size_t) (0.2 * gSr), 0.02);
+        CHECK (cents (*std::max_element (t.begin(), t.end()), *std::min_element (t.begin(), t.end())) > 1000.0, "link: beta moves with alpha's FM");
+        CHECK (x.modDepth (Beta, Engine::ModCoarse) > 1.4f, "link: beta's ring shows alpha's FM (%.2f oct)", x.modDepth (Beta, Engine::ModCoarse));
+    }
+    // Offset: S-curve, moves all four
+    CHECK (offsetSemitones (1.0f) == 48.0f && offsetSemitones (0.5f) == 6.0f && std::fabs (offsetSemitones (0.1f)) < 0.05f, "Offset S-curve");
+    {
+        Params p = oscSolo (Alpha, 261.6256f);
+        p.offset = 0.5f;
+        Engine e; e.setParams (p); e.prepare (gSr, kBlock);
+        for (int f = 0; f < kNumFilters; ++f)
+            CHECK (std::fabs (cents (pitchOf (e, p, f), 369.9944)) < 2.0, "Offset +6 st moves filter %d", f);
+        p.offset = -0.5f;
+        CHECK (std::fabs (cents (pitchOf (e, p, Alpha), 184.9972)) < 2.0, "Offset -6 st");
+    }
+    // Pitch gamma-delta split: notes from middle C up move alpha and beta, notes below it gamma and delta
+    {
+        Params p = oscSolo (Alpha, 261.6256f);
+        for (auto& f : p.f) f.keyTrack = true;
+        p.pitchSplit = SplitSplit;
+        Engine e; e.setParams (p); e.prepare (gSr, kBlock);
+        e.noteOn (72, 0.0f);
+        CHECK (std::fabs (cents (pitchOf (e, p, Alpha), 523.2511)) < 2.0 && std::fabs (cents (pitchOf (e, p, Beta), 523.2511)) < 2.0, "split: C5 moves alpha and beta");
+        CHECK (std::fabs (cents (pitchOf (e, p, Gamma), 261.6256)) < 2.0 && std::fabs (cents (pitchOf (e, p, Delta), 261.6256)) < 2.0, "split: C5 leaves gamma and delta");
+        e.noteOn (48, 0.0f);
+        CHECK (std::fabs (cents (pitchOf (e, p, Gamma), 130.8128)) < 2.0 && std::fabs (cents (pitchOf (e, p, Delta), 130.8128)) < 2.0, "split: C3 moves gamma and delta");
+        CHECK (std::fabs (cents (pitchOf (e, p, Alpha), 523.2511)) < 2.0, "split: alpha keeps C5");
+        e.noteOff (48);
+        CHECK (std::fabs (cents (pitchOf (e, p, Gamma), 130.8128)) < 2.0, "split: released low note, gamma stays");
+        p.pitchSplit = SplitAll;
+        CHECK (std::fabs (cents (pitchOf (e, p, Gamma), 523.2511)) < 2.0 && std::fabs (cents (pitchOf (e, p, Alpha), 523.2511)) < 2.0, "all: every filter follows the last note");
+    }
+}
+
+static void testMilestone2NoClicks()
+{
+    // Each new control, changed while a sine plays through the stereo morph, must not make a jump bigger than the
+    // sine itself does (on either side).
+    struct Flip { const char* name; int solo; std::function<void (Params&)> setup, on; };
+    auto none = [] (Params&) {};
+    const std::vector<Flip> flips = {
+        { "Morph jump", Alpha, none, [] (Params& p) { p.f[0].morph = 0.9f; } },
+        { "Width jump", Alpha, none, [] (Params& p) { p.f[0].width = 1.0f; } },
+        { "Morph ends (at the end)", Alpha, [] (Params& p) { p.f[0].morph = 1.0f; }, [] (Params& p) { p.f[0].morphEnds = EndsBp; } },
+        { "Bus to FM", Alpha, none, [] (Params& p) { p.bus[1] = BusFm; } },
+        { "Bus to anim", Alpha, none, [] (Params& p) { p.bus[0] = BusAnim; } },
+        { "FM amt jump", Alpha, [] (Params& p) { p.bus[1] = BusFm; }, [] (Params& p) { p.f[0].fmAmt = -1.0f; } },
+        { "Offset jump", Alpha, none, [] (Params& p) { p.offset = 0.6f; } },
+        { "Link on", Beta, [] (Params& p) { p.f[0].coarseHz = 440.0f; }, [] (Params& p) { p.linkAB = true; } },
+        { "Split on", Alpha, none, [] (Params& p) { p.pitchSplit = SplitSplit; } },
+    };
+    for (const auto& fl : flips)
+    {
+        Params p = solo (fl.solo);
+        for (auto& f : p.f) { f.coarseHz = 2000.0f; f.q = 0.7071f; f.tap = TapMorph; f.fmAmt = 0.6f; }
+        p.lfoRate = 3.0f;
+        fl.setup (p);
+        Engine e; e.setParams (p); e.prepare (gSr, kBlock);
+        e.noteOn (72, 0.0f);
+        render (e, p, 0.3, sine (150, 0.3));
+        Params q = p;
+        fl.on (q);
+        const auto o = render (e, q, 0.2, sine (150, 0.3), nullptr, (long) (0.3 * gSr));
+        const double r = std::max (jumpRatio (o.l, 0, o.l.size(), 150.0), jumpRatio (o.r, 0, o.r.size(), 150.0));
+        CHECK (r < 1.6, "%s: no click (jump ratio %.2f)", fl.name, r);
+    }
+}
+
 static void testCpu()
 {
     Params p;
     for (int f = 0; f < kNumFilters; ++f)
     {
         p.f[f].mode = f % 3; p.f[f].inLimit = true; p.f[f].outLimit = true; p.f[f].q = 10.0f;
-        p.f[f].coarseHz = 200.0f * (float) (f + 1); p.f[f].tap = TapLP;
+        p.f[f].coarseHz = 200.0f * (float) (f + 1); p.f[f].tap = f == 0 ? TapLP : TapMorph;
+        p.f[f].fmAmt = 0.5f; p.f[f].width = 0.6f; p.f[f].morph = 0.3f;
     }
     p.masterLimit = true;
+    p.linkAB = p.linkGD = true;
+    p.lfoRate = 3.0f;
+    p.bus[0] = BusWidth; p.bus[1] = BusFm; p.bus[2] = BusAnim; p.bus[3] = BusAnim;   // every connection busy
     Engine e; e.setParams (p); e.prepare (48000.0, 512);
     std::vector<float> t (512), s (512), l (512), r (512);
     for (int i = 0; i < 512; ++i) { t[(size_t) i] = 0.3f * (float) std::sin (i * 0.05); s[(size_t) i] = 0.3f * (float) std::sin (i * 0.031); }
@@ -551,7 +923,7 @@ static void testCpu()
     }
     const double secs = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
     const double pct = 100.0 * secs / 10.0;
-    std::printf ("CPU: everything on, side chain playing: %.2f%% of one core at 48 kHz (4x oversampling)\n", pct);
+    std::printf ("CPU: everything on (limiters, LFOs on every bus, Link), side chain playing: %.2f%% of one core at 48 kHz (4x oversampling)\n", pct);
     std::printf ("latency: %.1f samples at 48 kHz\n", e.latencySamples());
     CHECK (pct < 25.0, "CPU %.2f%%", pct);
 }
@@ -566,6 +938,12 @@ int main()
     testRouting();
     testLimiters();
     testNoClicks();
+    testMorph();
+    testWidth();
+    testLfosAndFm();
+    testAnim();
+    testLinkOffsetSplit();
+    testMilestone2NoClicks();
     testAutomationStress();
     testCpu();
     std::printf ("engine tests: %d checks, %d failed\n", checks, failures);

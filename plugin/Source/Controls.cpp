@@ -95,6 +95,16 @@ void PdKnob::paint (juce::Graphics& g)
 
     arc (g, cx, cy, r + 4.0f, kStart, kEnd, track(), 3.0f);
     arc (g, cx, cy, r + 4.0f, kStart, a, accent, 3.0f);
+    if (mod.depth > 0.002f)
+    {
+        // modulation ring (the draft's dotted arc): the swing, and a dot where the LFOs have the setting now
+        auto angle = [] (float p) { return kStart + (kEnd - kStart) * juce::jlimit (0.0f, 1.0f, p); };
+        const float rr = r + 9.0f;
+        arc (g, cx, cy, rr, angle (pos - mod.depth), angle (pos + mod.depth), accent.withAlpha (0.5f), 2.0f, true);
+        const float d = juce::degreesToRadians (angle (pos + mod.now));
+        g.setColour (accent);
+        g.fillEllipse (cx + rr * std::sin (d) - 2.5f, cy - rr * std::cos (d) - 2.5f, 5.0f, 5.0f);
+    }
     g.setColour (knobFace());
     g.fillEllipse (cx - r, cy - r, 2.0f * r, 2.0f * r);
     g.setColour (knobEdge());
@@ -109,6 +119,17 @@ void PdKnob::paint (juce::Graphics& g)
         const float v = param->convertFrom0to1 (param->getValue());
         const auto s = readout ? readout (v) : param->getCurrentValueAsText();
         textAt (g, s, cx, cy + r + 30.0f, text(), mono (11.0f));
+    }
+}
+
+void PdKnob::refreshModulation()
+{
+    if (! modSource) return;
+    const auto m = modSource();
+    if (std::fabs (m.now - mod.now) > 0.002f || std::fabs (m.depth - mod.depth) > 0.002f)
+    {
+        mod = m;
+        repaint();
     }
 }
 

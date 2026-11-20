@@ -6,6 +6,7 @@ using namespace PdParams;
 namespace
 {
     constexpr float kDefaultScale = 1.15f;         // opens at about 780 x 700
+    constexpr int kLiveMilestone = 2;              // controls of this milestone and earlier work; later ones are dimmed
     constexpr int kMasterX = 504, kMasterW = 168;
     int columnX (int f) { return 8 + f * 124; }
 
@@ -52,14 +53,38 @@ PedwarPanel::PedwarPanel (PedwarAudioProcessor& p) : proc (p)
         segs (id (f, Mode), { "Filter", "Res", "Osc" }, c, x0 + 8, 101, 102, {}, 1);
         knob (f, Gain, cx - 30, 158, 11, "gain", 1);
         segs (id (f, InLimit), { "off", "tanh" }, c, (int) cx + 6, 149, 48, "in limit", 1);
-        knob (f, Coarse, cx - 17, 232, 20, "coarse", 1, [] (float v) { return hzText (v); });
+        auto& coarse = knob (f, Coarse, cx - 17, 232, 20, "coarse", 1, [] (float v) { return hzText (v); });
         knob (f, Fine, cx + 36, 222, 9, "fine", 1);
-        knob (f, Q, cx - 28, 312, 14, "Q", 1);
+        auto& q = knob (f, Q, cx - 28, 312, 14, "Q", 1);
 
         knob (f, FmAmt, cx + 32, 308, 9, "FM amt", 2);
-        knob (f, Morph, cx - 28, 386, 14, "morph", 2);
-        knob (f, Width, cx + 32, 382, 10, "width", 2);
-        segs (id (f, MorphEnds), { utf8 ("LP\xc2\xb7HP"), "BP" }, c, x0 + 8, 428, 102, "morph ends", 2);
+        auto* ends = st.getParameter (id (f, MorphEnds));
+        auto* morphParam = st.getParameter (id (f, Morph));
+        auto& morph = knob (f, Morph, cx - 28, 383, 14, "morph", 2, [ends, morphParam] (float v)
+        {
+            // the panel names the right-hand end by the Morph ends switch (morph's range is 0..1, so v is normalised)
+            if (pedwar::morphMultiple (v) < 0.0f) return juce::String (ends != nullptr && ends->getValue() > 0.5f ? "BP" : "HP");
+            return morphParam != nullptr ? morphParam->getText (v, 20) : juce::String();
+        });
+        knob (f, Width, cx + 32, 379, 10, "width", 2);
+        // 3 units lower than the draft (and the Morph and Width knobs 3 higher), so the Morph readout is not hidden
+        segs (id (f, MorphEnds), { utf8 ("LP\xc2\xb7HP"), "BP" }, c, x0 + 8, 431, 102, "morph ends", 2);
+
+        // Modulation rings: where the LFOs move Coarse (octaves over the knob's 10.3), Q (over its 6.6) and Morph.
+        const auto& eng = proc.getEngine();
+        auto ring = [&eng, f] (int target, float span)
+        {
+            return [&eng, f, target, span]
+            {
+                return PdKnob::Modulation { eng.modNow (f, target) / span, eng.modDepth (f, target) / span };
+            };
+        };
+        coarse.setModulation (ring (pedwar::Engine::ModCoarse, std::log2 (20000.0f / 16.0f)));
+        q.setModulation (ring (pedwar::Engine::ModQ, std::log2 (50.0f / 0.5f)));
+        morph.setModulation (ring (pedwar::Engine::ModMorph, 1.0f));
+        modKnobs.push_back (&coarse);
+        modKnobs.push_back (&q);
+        modKnobs.push_back (&morph);
 
         segs (id (f, OutLimit), { "off", "on" }, c, x0 + 8, 470, 48, "out limit", 1);
         segs (id (f, KeyTrack), { "off", "on" }, c, x0 + 62, 470, 48, "key trk", 1);
@@ -73,7 +98,7 @@ PedwarPanel::PedwarPanel (PedwarAudioProcessor& p) : proc (p)
         owned.push_back (std::move (light));
     }
 
-    // Links (M2): alpha leads beta, delta leads gamma.
+    // Links: alpha leads beta, delta leads gamma.
     for (int i : { 0, 2 })
     {
         const float m = ((float) columnX (i) + 59.0f + (float) columnX (i + 1) + 59.0f) * 0.5f;
@@ -116,7 +141,7 @@ PedwarPanel::~PedwarPanel()
 
 void PedwarPanel::later (juce::Component& c, int milestone)
 {
-    if (milestone <= 1) return;
+    if (milestone <= kLiveMilestone) return;
     c.setEnabled (false);
     c.setAlpha (dimAlpha);
 }
@@ -180,6 +205,8 @@ void PedwarPanel::timerCallback()
         else if (l->currentGlow() > 0.01f) l->flash (l->currentGlow() * 0.72f);
         else if (l->currentGlow() > 0.0f) l->flash (0.0f);
     }
+    // Modulation rings on Coarse, Q and Morph.
+    for (auto* k : modKnobs) k->refreshModulation();
     // Each filter's input label: "side chain" in the filter's colour while that filter is taking the side chain.
     bool changed = false;
     for (int f = 0; f < numFilters; ++f)
@@ -229,16 +256,12 @@ void PedwarPanel::paint (juce::Graphics& g)
         textAt (g, sideLabel ? "side chain" : "track in", x0 + (onSide ? 22.0f : 12.0f), 91.0f, labelColour, 11.0f, Align::left);
     }
 
-    // Links (M2)
+    // Links
+    for (int i : { 0, 2 })
     {
-        juce::Graphics::ScopedSaveState s (g);
-        for (int i : { 0, 2 })
-        {
-            const float a = (float) columnX (i) + 59.0f, b = (float) columnX (i + 1) + 59.0f;
-            dashedLine (g, a, b, 580.0f, filterColour (i).withAlpha (0.6f * dimAlpha));
-            textAt (g, utf8 (i == 0 ? "\xce\xb1 leads \xce\xb2" : "\xce\xb4 leads \xce\xb3"), (a + b) * 0.5f, 604.0f,
-                    muted().withAlpha (dimAlpha), 11.0f);
-        }
+        const float a = (float) columnX (i) + 59.0f, b = (float) columnX (i + 1) + 59.0f;
+        dashedLine (g, a, b, 580.0f, filterColour (i).withAlpha (0.6f));
+        textAt (g, utf8 (i == 0 ? "\xce\xb1 leads \xce\xb2" : "\xce\xb4 leads \xce\xb3"), (a + b) * 0.5f, 604.0f, muted(), 11.0f);
     }
 
     // Master strip
@@ -248,7 +271,7 @@ void PedwarPanel::paint (juce::Graphics& g)
     g.setColour (line());
     g.drawRoundedRectangle (mx + 0.5f, 50.5f, (float) kMasterW - 1.0f, 511.0f, 8.0f, 1.0f);
     textAt (g, "master", mx + 12.0f, 76.0f, text(), 13.0f, Align::left);
-    textAt (g, "modulation", mx + 12.0f, 184.0f, text().withAlpha (dimAlpha), 11.0f, Align::left);
+    textAt (g, "modulation", mx + 12.0f, 184.0f, text(), 11.0f, Align::left);
     textAt (g, "levels", mx + 12.0f, 282.0f, text(), 11.0f, Align::left);
     textAt (g, "pitch snap", mx + 12.0f, 470.0f, text().withAlpha (dimAlpha), 11.0f, Align::left);
     textAt (g, "MIDI in: strike + key track", mx + (float) kMasterW * 0.5f, 550.0f, muted(), 11.0f);
@@ -256,12 +279,8 @@ void PedwarPanel::paint (juce::Graphics& g)
 
 void PedwarPanel::paintOverChildren (juce::Graphics& g)
 {
-    // Milestone tags (not dimmed), where the draft has them.
+    // Milestone tags (not dimmed), where the draft has them. Milestone 2's controls work now, so only M3 is left.
     tag (g, 318, 1, 3);
-    for (int f = 0; f < numFilters; ++f) tag (g, (float) columnX (f) + 58.0f, 356, 2);
-    tag (g, 160, 570, 2);
-    tag (g, 408, 570, 2);
-    tag (g, (float) (kMasterX + kMasterW - 34), 62, 2);
     tag (g, (float) (kMasterX + 54), 402, 3);
     tag (g, (float) (kMasterX + kMasterW - 34), 458, 3);
 }

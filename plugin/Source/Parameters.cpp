@@ -1,4 +1,5 @@
 #include "Parameters.h"
+#include <pedwar/Params.h>
 #include <pedwar/Scales.h>
 #include <array>
 
@@ -63,14 +64,18 @@ namespace
     juce::String qText (float v, int)    { return juce::String (v, v < 9.95f ? 1 : 0); }
     juce::String morphText (float v, int)
     {
-        const float oct = 4.0f * (v - 0.5f);                              // -2 .. +2 octaves
+        // Left to right: LP end, x4, x2, x1 (the notch), x1/2, x1/4, HP (or BP) end. See pedwar::morphWeights.
+        const float r = pedwar::morphMultiple (v);
+        if (r < 0.0f)  return "HP / BP";
+        if (r < 1.0e-6f) return "LP";
         const juce::String x = juce::String::fromUTF8 ("\xc3\x97");      // the multiplication sign
+        const float oct = std::log2 (r);
         if (std::fabs (oct + 2.0f) < 0.03f) return x + juce::String::fromUTF8 ("\xc2\xbc");
         if (std::fabs (oct + 1.0f) < 0.03f) return x + juce::String::fromUTF8 ("\xc2\xbd");
         if (std::fabs (oct) < 0.03f)        return x + "1";
         if (std::fabs (oct - 1.0f) < 0.03f) return x + "2";
         if (std::fabs (oct - 2.0f) < 0.03f) return x + "4";
-        return x + juce::String (std::exp2 (oct), 2);
+        return x + juce::String (r, r < 10.0f ? 2 : 1);
     }
     juce::String rateText (float v, int) { return juce::String (v, v < 1.0f ? 2 : 1) + " Hz"; }
 }
@@ -100,8 +105,8 @@ juce::String dbText (float db)
 
 float offsetSemitones (float knob)
 {
-    // S-curve: fine near the centre, big steps at the ends. Full turn = +-48 semitones.
-    return 48.0f * knob * knob * knob;
+    // S-curve: fine near the centre, big steps at the ends. Full turn = +-48 semitones (the engine's own curve).
+    return pedwar::offsetSemitones (knob);
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout()

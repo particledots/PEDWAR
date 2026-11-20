@@ -17,7 +17,7 @@ namespace PdParams
     enum Slot
     {
         Mode, Gain, InLimit, Coarse, Fine, Q, OutLimit, KeyTrack, Tap, Strike,   // milestone 1
-        FmAmt, Morph, MorphEnds, Width,                                           // milestone 2
+        FmAmt, Morph, MorphEnds, Width,                                           // milestone 2 (reserved in 1)
         Level,                                                                    // milestone 1 (master strip)
         numSlots
     };
@@ -25,24 +25,24 @@ namespace PdParams
 
     // Master strip
     inline constexpr const char* masterLimit = "masterLimit";
-    inline constexpr const char* linkAB      = "linkAB";       // M2
-    inline constexpr const char* linkGD      = "linkGD";       // M2
-    inline constexpr const char* offset      = "offset";       // M2
-    inline constexpr const char* pitchSplit  = "pitchSplit";   // M2
-    inline constexpr const char* lfoRate     = "lfoRate";      // M2
-    extern const char* const busIds[numFilters];               // M2: "busA" "busB" "busG" "busD"
+    inline constexpr const char* linkAB      = "linkAB";
+    inline constexpr const char* linkGD      = "linkGD";
+    inline constexpr const char* offset      = "offset";
+    inline constexpr const char* pitchSplit  = "pitchSplit";
+    inline constexpr const char* lfoRate     = "lfoRate";
+    extern const char* const busIds[numFilters];               // "busA" "busB" "busG" "busD"
     inline constexpr const char* stereoMode  = "stereoMode";   // M3
     inline constexpr const char* pitchSnap   = "pitchSnap";    // M3
     inline constexpr const char* pitchScale  = "pitchScale";   // M3
     inline constexpr const char* pitchKey    = "pitchKey";     // M3
     inline constexpr const char* quality     = "quality";      // M3
 
-    extern const float defaultCoarse[numFilters];              // 110, 220, 440, 1760 Hz
+    extern const float defaultCoarse[numFilters];              // 110, 220, 440, 1760 Hz (= pedwar::kDefaultCoarseHz)
 
     juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
     // The texts shown on the panel and in Logic.
     juce::String hzText (float hz);                            // "A2 110 Hz", "A6 1.76 kHz"
     juce::String dbText (float db);                            // "0.0 dB", "-inf dB"
-    float offsetSemitones (float knob);                        // the Offset knob's S-curve (M2)
+    float offsetSemitones (float knob);                        // the Offset knob's S-curve
 }

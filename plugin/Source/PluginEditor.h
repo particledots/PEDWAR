@@ -1,6 +1,6 @@
 // The PEDWAR panel. Laid out at 680 x 612 units exactly like the approved draft (pedwar-gui-draft.html, 2026-11-19)
 // and scaled to the window (drag the corner to resize; the shape stays the same).
-// Controls that arrive in a later milestone are in place, dimmed and tagged "M2" or "M3".
+// Controls that arrive in a later milestone are in place, dimmed and tagged "M3".
 
 #pragma once
 
@@ -30,6 +30,7 @@ private:
     PdLookAndFeel lnf;
     std::vector<std::unique_ptr<juce::Component>> owned;
     PdStrikeLight* lights[4] {};
+    std::vector<PdKnob*> modKnobs;           // Coarse, Q and Morph of each filter: they show modulation rings
     int lastStrikes[4] {};
     bool shownSidechain[4] { false, false, false, false };
     juce::ComboBox presetMenu;

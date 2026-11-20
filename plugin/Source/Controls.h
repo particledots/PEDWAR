@@ -18,10 +18,15 @@ public:
 };
 
 // A knob: value arc, face, pointer, its name and a readout underneath. Only the knob itself takes the mouse.
+// With a modulation source, a dotted ring outside the arc shows how far the LFOs can swing the knob's setting, and a
+// dot on it where they have it right now.
 class PdKnob : public juce::Slider
 {
 public:
     using Readout = std::function<juce::String (float)>;
+    struct Modulation { float now = 0.0f, depth = 0.0f; };      // in units of the knob's travel (0..1)
+    using ModSource = std::function<Modulation()>;
+
     PdKnob (juce::AudioProcessorValueTreeState&, const char* paramId, juce::Colour accent, float radius,
             const juce::String& label, Readout readout = nullptr);
 
@@ -29,7 +34,13 @@ public:
     void paint (juce::Graphics&) override;
     bool hitTest (int x, int y) override;
 
+    void setModulation (ModSource s) { modSource = std::move (s); refreshModulation(); }
+    void refreshModulation();                  // called by the panel's timer; repaints when the ring has moved
+    Modulation shownModulation() const { return mod; }
+
 private:
+    ModSource modSource;
+    Modulation mod;
     juce::RangedAudioParameter* param = nullptr;
     juce::Colour accent;
     float r;
