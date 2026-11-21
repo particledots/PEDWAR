@@ -6,7 +6,7 @@ ceithir (a quad state-variable filter / resonator). It is not a copy, contains n
 affiliated with Instruō. The ceithir is an analog module with no published firmware; its manual was used only to
 understand what the controls do. "Pedwar" is Welsh for "four".
 
-Status: **milestone 3 of 3 (version 0.3.0) built on 2026-11-20; waiting for the Logic test on both Macs.** Milestones 1
+Status: **milestone 3 of 3: version 0.3.0 tested in Logic on both Macs on 2026-11-20; 0.3.1 (preset levels re-matched) built on 2026-11-20, waiting for the Logic test on the M4.** Milestones 1
 and 2 (0.2.0) were tested in Logic on the M4 Mac mini (Logic 11.2.2) and the Intel Mac (Logic 10.7.8) on 2026-11-20.
 
 ## What is new in milestone 3
@@ -32,9 +32,16 @@ and 2 (0.2.0) were tested in Logic on the M4 Mac mini (Logic 11.2.2) and the Int
   the same at every Quality, so Logic never has to re-align the track. Aliasing of a hard-driven In limit at 7.3 kHz:
   2x about -50 dB, 4x about -90 dB, 8x about -97 dB.
 - **Preset menu** (top bar): **Init** plus 14 factory presets of my own (the ceithir manual has no example patches).
-  Init and every preset leave **Pitch Snap, Scale, Key and Quality** alone. Every preset is level matched to Init:
-  within 0.3 dB, measured as K-weighted loudness (the measure behind LUFS), "input" presets with pink noise going in,
-  the others with no input and middle C held or struck four times a second; none peaks above 0.95. A project remembers
+  Init and every preset leave **Pitch Snap, Scale, Key and Quality** alone. Every preset is level matched to Init
+  (K-weighted loudness, the measure behind LUFS). The "input" presets are measured with three signals going in, pink
+  noise, a drum loop and a bass line, and are within 2 dB of Init on each (since 0.3.1; 0.3.0 matched pink noise only).
+  The exception is the bass line through the two formant presets, Vowel Ah and Talking Formants, which are 4 to 5 dB
+  quieter than Init on it because they filter out the bass's low notes. Band-pass and über presets make drum hits
+  spikier than Init does, so the resonant ones (Vowel Ah, Talking Formants, Uber Space, Auto Wah, Sympathetic Strings,
+  Singing Res and the three struck presets) have **Master limit** on: it does nothing at normal levels and rounds off
+  only the biggest hits towards 0 dB. On the test drum loop no preset peaks more than 3 dB above Init and none goes
+  over 0 dB. The other presets are measured with no input and middle C held or struck four times a second, within 1
+  dB of Init. A project remembers
   which preset was chosen (if you then move a knob the menu still shows it); a project saved before 0.3.0 shows
   "Custom", with its settings exactly as saved. The same presets are in Logic's own preset menu (Factory).
 

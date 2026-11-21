@@ -1173,8 +1173,11 @@ static void testPitchSnap()
 
 static void testPresets()
 {
-    const double target = loudness::measure (presets::init(), presets::Input);
-    std::printf ("preset loudness (Init with pink noise: %.1f dB, K-weighted):\n", target);
+    // Init on each test signal: the loudness and the peak every preset is compared with
+    double target[loudness::kNumSignals], initPeak[loudness::kNumSignals];
+    for (int s = 0; s < loudness::kNumSignals; ++s) target[s] = loudness::measure (presets::init(), presets::Input, &initPeak[s], s);
+    std::printf ("preset loudness, K-weighted, against Init (pink noise %.1f dB peak %.2f, drum loop %.1f dB peak %.2f, bass line %.1f dB peak %.2f):\n",
+                 target[0], initPeak[0], target[1], initPeak[1], target[2], initPeak[2]);
     for (int i = 0; i < presets::kNumFactory; ++i)
     {
         const auto& in = presets::info (i);
@@ -1183,11 +1186,49 @@ static void testPresets()
         const Params d = presets::init();
         CHECK (p.snap == d.snap && p.scale == d.scale && p.key == d.key && p.quality == d.quality, "preset %d leaves Snap, Scale, Key, Quality alone", i);
         CHECK (std::string (in.name).size() > 0 && std::string (in.name).size() < 24, "preset %d has a short name", i);
-        double pk = 0.0;
-        const double l = loudness::measure (p, in.kind, &pk);
-        std::printf ("  %-20s %-6s %6.1f dB (%+.1f), peak %.2f\n", in.name, in.kind == presets::Input ? "input" : (in.kind == presets::Voice ? "voice" : "struck"), l, l - target, pk);
-        CHECK (std::fabs (l - target) < 1.0, "preset %s level matched (%+.2f dB)", in.name, l - target);
-        CHECK (pk < 1.0, "preset %s peak %.2f", in.name, pk);
+        if (in.kind == presets::Input)
+        {
+            // audio in: about as loud as Init on pink noise, a drum loop and a bass line. The formant presets filter out
+            // a bass line's low notes, so they may be quieter on it (never louder). On the drum loop no preset peaks more
+            // than 3 dB above Init, and nothing reaches the red (1.0) on any of the three.
+            const bool formants = i == 1 || i == 2;
+            double l[loudness::kNumSignals], pk[loudness::kNumSignals];
+            for (int s = 0; s < loudness::kNumSignals; ++s) l[s] = loudness::measure (p, in.kind, &pk[s], s) - target[s];
+            std::printf ("  %-20s input  pink %+5.1f dB peak %.2f | drums %+5.1f dB peak %.2f (%+.1f dB) | bass %+5.1f dB peak %.2f\n", in.name,
+                         l[0], pk[0], l[1], pk[1], 20.0 * std::log10 (pk[1] / initPeak[1]), l[2], pk[2]);
+            CHECK (std::fabs (l[0]) < 2.0, "preset %s level matched on pink noise (%+.2f dB)", in.name, l[0]);
+            CHECK (std::fabs (l[1]) < 2.0, "preset %s level matched on the drum loop (%+.2f dB)", in.name, l[1]);
+            CHECK (formants ? (l[2] < 2.0 && l[2] > -6.0) : std::fabs (l[2]) < 2.0, "preset %s level matched on the bass line (%+.2f dB)", in.name, l[2]);
+            CHECK (std::fabs (l[0] - l[1]) < 2.5, "preset %s: pink noise and drums alike (%.2f dB apart)", in.name, std::fabs (l[0] - l[1]));
+            CHECK (pk[1] < initPeak[1] * 1.42, "preset %s: drum peak %.2f, no more than 3 dB above Init's %.2f", in.name, pk[1], initPeak[1]);
+            for (int s = 0; s < loudness::kNumSignals; ++s)
+                CHECK (pk[s] < 1.0, "preset %s: peak %.3f on the %s, below the red", in.name, pk[s], loudness::signalName (s));
+        }
+        else
+        {
+            double pk = 0.0;
+            const double l = loudness::measure (p, in.kind, &pk);
+            std::printf ("  %-20s %-6s %+5.1f dB against Init on pink noise, peak %.2f\n", in.name, in.kind == presets::Voice ? "voice" : "struck", l - target[0], pk);
+            CHECK (std::fabs (l - target[0]) < 1.0, "preset %s level matched (%+.2f dB)", in.name, l - target[0]);
+            CHECK (pk < 1.0, "preset %s peak %.2f", in.name, pk);
+        }
+        // in PEDWAR the audio colours every preset: drum loop in with notes played, nothing past the Master limit ceiling (1.0) by more than a hair
+        {
+            const double sr = 48000.0;
+            const int n = (int) (3.0 * sr), block = 256, strikeEvery = (int) (0.25 * sr);
+            const auto drums = loudness::drumLoop (n, sr);
+            Engine e; e.setParams (p); e.prepare (sr, block);
+            std::vector<float> l ((size_t) block), r ((size_t) block);
+            double pk = 0.0;
+            if (in.kind == presets::Voice) e.noteOn (60, 100.0f / 127.0f);
+            for (int pos = 0; pos + block <= n; pos += block)
+            {
+                if (in.kind != presets::Voice && pos % strikeEvery < block) { e.noteOff (60); e.noteOn (60, 100.0f / 127.0f); }
+                e.process (drums.data() + pos, nullptr, l.data(), r.data(), block);
+                if (pos >= (int) sr) for (int j = 0; j < block; ++j) pk = std::max (pk, (double) std::max (std::fabs (l[(size_t) j]), std::fabs (r[(size_t) j])));
+            }
+            CHECK (pk < 1.05, "preset %s: drum loop in plus notes, peak %.3f (Master limit ceiling 1.0)", in.name, pk);
+        }
         for (const auto& f : p.f)
             CHECK (f.levelDb <= 6.0f && f.levelDb >= -60.0f && f.q >= 0.5f && f.q <= 50.0f && f.coarseHz >= 16.0f && f.coarseHz <= 20000.0f
                    && f.gainDb <= 12.0f && f.fmAmt >= -1.0f && f.fmAmt <= 1.0f && f.morph >= 0.0f && f.morph <= 1.0f, "preset %d: settings in range", i);

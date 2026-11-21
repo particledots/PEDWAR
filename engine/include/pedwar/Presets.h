@@ -8,9 +8,13 @@
 // Stereo and Master limit). It never changes Pitch Snap, Scale, Key or Quality: those are the player's own set-up.
 //
 // Level matching: each preset has a 'trim' (dB) added to all four Levels. The trims were set so every preset is about
-// as loud as Init (K-weighted RMS, the measure behind LUFS): an "input" preset with pink noise going in, a "voice"
-// preset with no input, played by notes (a held note, or a note every quarter second for the struck ones).
-// The engine self-test measures every preset and fails if one is more than 1.5 dB away.
+// as loud as Init (K-weighted RMS, the measure behind LUFS). An "input" preset is measured with three signals going in
+// (pink noise, a drum loop and a bass line, engine/tests/Loudness.h) and its trim balances the three; a "voice" preset
+// with no input, played by notes (a held note, or a note every quarter second for the struck ones).
+// Band-pass and uber presets make drum hits spikier than Init does, so the resonant ones (Vowel Ah, Talking Formants,
+// Uber Space, Auto Wah, Sympathetic Strings, Singing Res, and the struck ones) have Master limit on: it is linear at
+// normal levels and only rounds off the biggest hits, so they stay out of the red.
+// The engine self-test measures every preset on every signal and fails if one strays (limits in testPresets).
 
 #pragma once
 #include "Params.h"
@@ -29,13 +33,13 @@ namespace presets
     inline const Info& info (int i)
     {
         static const Info list[kNumFactory] = {
-            { "Notch Phaser",        Input,  "any audio: four notches drift slowly",                    0.0f },
-            { "Vowel Ah",            Input,  "noise, drums, synths: four formant band-passes",          0.0f },
-            { "Talking Formants",    Input,  "any audio: the formants wander (anim)",                   0.0f },
-            { "Uber Space",          Input,  "any audio: wide, moving stereo (uber)",                   0.0f },
-            { "Tanh Low Pass",       Input,  "bass, drums: driven low-pass",                            0.0f },
-            { "Auto Wah",            Input,  "guitar, keys, drums: two LFO-swept band-passes",          0.0f },
-            { "Sympathetic Strings", Input,  "any audio plus notes: rings at the note and its harmonics", 0.0f },
+            { "Notch Phaser",        Input,  "any audio: four notches drift slowly",                    -0.9f },
+            { "Vowel Ah",            Input,  "noise, drums, synths: four formant band-passes",          -1.8f },
+            { "Talking Formants",    Input,  "any audio: the formants wander (anim)",                   0.1f },
+            { "Uber Space",          Input,  "any audio: wide, moving stereo (uber)",                   -2.0f },
+            { "Tanh Low Pass",       Input,  "bass, drums: driven low-pass",                            -1.1f },
+            { "Auto Wah",            Input,  "guitar, keys, drums: two LFO-swept band-passes",          -0.7f },
+            { "Sympathetic Strings", Input,  "any audio plus notes: rings at the note and its harmonics", 0.3f },
             { "Sine Drone",          Voice,  "a held note: four sines on the note's harmonics",         0.0f },
             { "Struck Bell",         Struck, "notes C4 and up: bell partials, velocity sets the hit",   0.0f },
             { "Mallets",             Struck, "notes around C4 to C6: marimba-like",                     0.0f },
@@ -88,6 +92,7 @@ namespace presets
                 tune (730.0f, 1090.0f, 2440.0f, 3400.0f);
                 qs (5.0f, 7.0f, 10.0f, 12.0f);
                 levels (-4.0f, -7.0f, -12.0f, -14.0f);
+                p.masterLimit = true;
                 break;
 
             case 2:   // Talking Formants: formant band-passes (Morph near the BP end), Q and Morph animated
@@ -98,6 +103,7 @@ namespace presets
                 levels (-6.5f, -8.5f, -12.5f, -14.5f);
                 buses (BusAnim, BusAnim, BusAnim, BusAnim);
                 p.lfoRate = 0.35f;
+                p.masterLimit = true;
                 break;
 
             case 3:   // Uber Space: leaning notches at full width, swept by their own LFOs, uber stereo
@@ -107,6 +113,7 @@ namespace presets
                 levels (-2.5f, -2.5f, -2.5f, -2.5f);
                 p.lfoRate = 0.18f;
                 p.stereoMode = StereoUber;
+                p.masterLimit = true;
                 break;
 
             case 4:   // Tanh Low Pass: two driven low-passes an octave apart
@@ -123,12 +130,14 @@ namespace presets
                 levels (-1.0f, off, off, -3.0f);
                 buses (BusFm, BusFm, BusWidth, BusWidth);
                 p.lfoRate = 2.2f;
+                p.masterLimit = true;
                 break;
 
             case 6:   // Sympathetic Strings: four high-Q band-passes on the note and its harmonics; notes also pluck them
                 all ([] (FilterParams& f) { f.mode = ModeFilter; f.tap = TapBP; f.q = 45.0f; f.gainDb = -6.0f; f.outLimit = true; });
                 tune (C4, C5, G5, C6);
                 levels (-5.0f, -8.0f, -11.0f, -13.0f);
+                p.masterLimit = true;
                 break;
 
             case 7:   // Sine Drone: four steady sines on the note's harmonics (1, 2, 3, 4)
@@ -167,6 +176,7 @@ namespace presets
                 levels (-5.0f, -7.0f, -9.0f, -11.0f);
                 buses (BusAnim, BusAnim, BusAnim, BusAnim);
                 p.lfoRate = 0.25f;
+                p.masterLimit = true;
                 break;
 
             case 12:  // Split Drone: notes from middle C up play alpha and beta, notes below play gamma and delta

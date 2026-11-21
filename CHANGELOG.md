@@ -1,6 +1,26 @@
 # Changelog
 
-## 0.3.0 — milestone 3 (built 2026-11-20; waiting for the Logic test)
+## 0.3.1 — milestone 3 preset level fix (built 2026-11-20; waiting for the Logic test)
+
+- In the 0.3.0 Logic test, with a drum loop going in, Uber Space came out much louder than Init and Tanh Low Pass
+  moderately louder, and Logic's meter went into the red; the presets had been level matched on pink noise only.
+- The "input" presets are now level matched on three signals: pink noise, a drum loop (120 BPM kick, snare and hats,
+  with a typical mixed loop's spectrum) and a bass line (a filtered saw, C1 to C3), all in `engine/tests/Loudness.h`.
+  Each is within 2 dB of Init on all three; only Vowel Ah and Talking Formants are 4 to 5 dB quieter on the bass line
+  (they filter out its low notes). New trims: Notch Phaser -0.9 dB, Vowel Ah -1.8, Talking Formants +0.1, Uber Space
+  -2.0, Tanh Low Pass -1.1, Auto Wah -0.7, Sympathetic Strings +0.3.
+- Band-pass and über presets make drum hits spikier than Init does, so Vowel Ah, Talking Formants, Uber Space,
+  Auto Wah, Sympathetic Strings and Singing Res now have Master limit on (the struck presets already had it). It does
+  nothing at normal levels and only rounds off the biggest hits. On the drum loop no preset peaks more than 3 dB above
+  Init (Init 0.70, the highest 0.98) and none reaches 0 dB on any of the three signals.
+- The voice and struck presets are unchanged (they are played by notes and were already matched); Singing Res sounds
+  the same with notes alone (its level stays below where Master limit starts).
+- Nothing else changed: no control ids, no saved-setting entries, Init, and Pitch Snap, Scale, Key and Quality are
+  never touched by a preset. Projects keep their own settings; only choosing a preset again gives the new levels.
+- Checks: engine self-test 516 (new: every input preset's loudness and peak on pink noise, the drum loop and the bass
+  line against Init; every preset with the drum loop going in plus notes stays at Master limit's ceiling).
+
+## 0.3.0 — milestone 3 (built 2026-11-20, run 44832903530; tested in Logic on both Macs, works except the preset levels on drums)
 
 - **Stereo sum / über**: über sends α's and β's right sides (the width all-pass blend) to the left output and γ's and
   δ's left sides to the right, +4 dB so it is about as loud as sum; cross-faded over 20 ms.
