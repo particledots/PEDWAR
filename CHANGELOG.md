@@ -1,6 +1,11 @@
 # Changelog
 
-## 0.3.1 — milestone 3 preset level fix (built 2026-11-20; waiting for the Logic test)
+## 0.3.1 — milestone 3 preset level fix (built 2026-11-20, run 44845827670; tested in Logic on the M4, works)
+
+- **Logic test (M4, 2026-11-20):** with a drum loop going in, Init peaks at about 0 dB on Logic's meter; Uber Space,
+  Tanh Low Pass, Notch Phaser, Vowel Ah, Talking Formants, Auto Wah and Sympathetic Strings stay at about Init's level,
+  none goes into the red or sounds noticeably louder. With a bass line they stay level, Vowel Ah and Talking Formants
+  a little quieter. Singing Res on a held note sounds the same as before. **Milestone 3 finished.**
 
 - In the 0.3.0 Logic test, with a drum loop going in, Uber Space came out much louder than Init and Tanh Low Pass
   moderately louder, and Logic's meter went into the red; the presets had been level matched on pink noise only.
@@ -18,9 +23,18 @@
 - Nothing else changed: no control ids, no saved-setting entries, Init, and Pitch Snap, Scale, Key and Quality are
   never touched by a preset. Projects keep their own settings; only choosing a preset again gives the new levels.
 - Checks: engine self-test 516 (new: every input preset's loudness and peak on pink noise, the drum loop and the bass
-  line against Init; every preset with the drum loop going in plus notes stays at Master limit's ceiling).
+  line against Init; every preset with the drum loop going in plus notes stays at Master limit's ceiling); plugin-layer
+  check 247 (PEDWAR) and 236 (PEDWAR Synth); auval and pluginval (strictness 5) passed for both plugins.
 
 ## 0.3.0 — milestone 3 (built 2026-11-20, run 44832903530; tested in Logic on both Macs, works except the preset levels on drums)
+
+- **Logic test (2026-11-20).** M4: a project from an older build opens as "Custom" and sounds the same; nothing is
+  dimmed; every preset sounds different; the bell and the drone work; the Snap and Scale readouts step correctly;
+  über / sum and Quality switch without clicks; "8x heavy" in amber. Intel Mac: CPU meter about 7% at 4x and 15% at
+  8x; no clicks switching Quality; Uber Space and Bleep Swarm sound; the preset name survives save and reopen.
+  Problem: with a drum loop going in, Uber Space got much louder and Tanh Low Pass moderately louder, and Logic's meter
+  went into the red (Notch Phaser, Vowel Ah and Auto Wah only very slightly different); with a bass line every preset
+  was even. Fixed in 0.3.1.
 
 - **Stereo sum / über**: über sends α's and β's right sides (the width all-pass blend) to the left output and γ's and
   δ's left sides to the right, +4 dB so it is about as loud as sum; cross-faded over 20 ms.

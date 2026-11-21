@@ -6,8 +6,24 @@ ceithir (a quad state-variable filter / resonator). It is not a copy, contains n
 affiliated with Instruō. The ceithir is an analog module with no published firmware; its manual was used only to
 understand what the controls do. "Pedwar" is Welsh for "four".
 
-Status: **milestone 3 of 3: version 0.3.0 tested in Logic on both Macs on 2026-11-20; 0.3.1 (preset levels re-matched) built on 2026-11-20, waiting for the Logic test on the M4.** Milestones 1
-and 2 (0.2.0) were tested in Logic on the M4 Mac mini (Logic 11.2.2) and the Intel Mac (Logic 10.7.8) on 2026-11-20.
+Status: **finished. All three milestones are built and tested in Logic.** Version 0.3.1 (run 44845827670) is the
+current build. Milestones 1, 2 (0.2.0) and 3 (0.3.0, with the 0.3.1 preset level fix) were tested in Logic on the M4
+Mac mini (macOS Tahoe, Logic 11.2.2) and the Intel Mac (macOS 12.7.8, Logic 10.7.8) on 2026-11-20.
+
+## Milestone 3 Logic test results (2026-11-20)
+
+- **0.3.0 (run 44832903530), M4:** a project from an older build opens with the Preset menu on "Custom" and sounds the
+  same; nothing is dimmed; every preset sounds different; the struck bell and the drone work; the Snap and Scale
+  readouts step correctly; über / sum and Quality switch without clicks; "8x heavy" shows in amber.
+- **0.3.0, Intel Mac:** Logic's CPU meter about 7% at 4x and 15% at 8x; no clicks switching Quality; Uber Space and
+  Bleep Swarm sound; the preset name survives saving and reopening.
+- **0.3.0, the one problem:** with a drum loop going in, Uber Space got much louder than Init and Tanh Low Pass
+  moderately louder, and Logic's meter went into the red (the presets had been level matched on pink noise only).
+  With a bass line every preset sounded even.
+- **0.3.1 (run 44845827670), M4, the fix:** with the drum loop going in, Init peaks at about 0 dB on Logic's meter;
+  Uber Space, Tanh Low Pass, Notch Phaser, Vowel Ah, Talking Formants, Auto Wah and Sympathetic Strings stay at about
+  Init's level, none goes into the red or sounds noticeably louder. With the bass line they stay level too, Vowel Ah
+  and Talking Formants a little quieter (as expected). Singing Res on a held note sounds the same as before.
 
 ## What is new in milestone 3
 
@@ -174,7 +190,7 @@ Signals inside are plus/minus 1 at full scale.
 - **CPU** (% of one core at 48 kHz, worst case: every limiter on, LFOs on every bus, both Links, über, Snap and a scale,
   all four filters busy, side chain playing), measured by the engine self-test on a Linux machine (the Actions
   run's "ENGINE-CPU" line): 2x about 3.9%, 4x about 5.8%, 8x about 10.4%. In the milestone 2 Logic test on the Intel Mac (4x),
-  Logic's CPU meter showed about 7%, never above 10%; the milestone 3 check on the Intel Mac is below once done.
+  Logic's CPU meter showed about 7%, never above 10%; in the milestone 3 test it showed about 7% at 4x and 15% at 8x.
 - **Every control was fixed in the first build, so saved projects never change:** 75 controls, the same list in both
   plugins, and a "preset" entry in the saved settings for the Preset menu.
 
