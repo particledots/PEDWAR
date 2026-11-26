@@ -6,8 +6,8 @@ ceithir (a quad state-variable filter / resonator). It is not a copy, contains n
 affiliated with Instruō. The ceithir is an analog module with no published firmware; its manual was used only to
 understand what the controls do. "Pedwar" is Welsh for "four".
 
-Status: **finished. All three milestones are built and tested in Logic.** Version 0.3.2 (the gold panel, cosmetic
-only) is the current build, waiting for its Logic test; 0.3.1 (run 44845827670) is the last build tested in Logic. Milestones 1, 2 (0.2.0) and 3 (0.3.0, with the 0.3.1 preset level fix) were tested in Logic on the M4
+Status: **finished. All three milestones are built and tested in Logic.** Version 0.3.2 (run 45870537111, the gold
+panel, cosmetic only) is the current build, tested in Logic on the Intel Mac on 2026-11-26. Milestones 1, 2 (0.2.0) and 3 (0.3.0, with the 0.3.1 preset level fix) were tested in Logic on the M4
 Mac mini (macOS Tahoe, Logic 11.2.2) and the Intel Mac (macOS 12.7.8, Logic 10.7.8) on 2026-11-20.
 
 ## The panel (0.3.2)
@@ -39,6 +39,18 @@ title in Marcellus between two ornament lines, and blue lamps as the only colour
   drawn pixels); every text fits its place (names, titles, every knob's value over its whole range, every switch and
   menu entry, over 48,000 texts); the update is much lighter than drawing the whole panel. The Actions run uploads
   pictures of both panels (**panel-pictures**).
+
+## 0.3.2 Logic test results (Intel Mac, macOS 12.7.8, Logic 10.7.8, 2026-11-26)
+
+- Installs as usual. A project saved with PEDWAR opens with the same settings, the same sound and the same Preset
+  menu entry.
+- The gold panel opens; "PEDWAR" sits between the two gold lines; no text cut off or overlapping. Dragged to the
+  smallest and the largest size: nothing cut off or blurry.
+- Mode, Key track, Link, the bus grid lamps and Quality all respond and light blue; 8x reads "8x heavy" in gold.
+- Setting α's bus lamp to anim moves the dotted rings. (The strike lamps' flash on each note was not specifically
+  confirmed.)
+- Logic's CPU meter: about 5-10% with PEDWAR alone, very little difference with the window open or closed.
+- PEDWAR Synth opens with the same gold panel.
 
 ## Milestone 3 Logic test results (2026-11-20)
 

@@ -1,6 +1,12 @@
 # Changelog
 
-## 0.3.2 — the gold panel (built 2026-11-26; cosmetic only; waiting for its Logic test)
+## 0.3.2 — the gold panel (built 2026-11-26, run 45870537111; cosmetic only; tested in Logic on the Intel Mac, works)
+
+- **Logic test (Intel Mac, 2026-11-26):** old project opens with the same settings, sound and Preset entry; the gold
+  panel draws correctly at the smallest and largest window sizes with no text cut off; every switch tried responds and
+  lights blue, 8x reads "8x heavy" in gold; the modulation rings move; CPU about 5-10% with PEDWAR alone, about the
+  same with the window open or closed; PEDWAR Synth has the same panel. The strike lamps' flash was not specifically
+  confirmed.
 
 - The panel in the gold "sections" look of Anamnesis 0.3.1 (its colours, fonts, knob, switch and menu drawing, frames
   with titles set into the top line, flow lines with nodes and hops, and the stored-picture backdrop). Approved as a
