@@ -47,8 +47,8 @@ title in Marcellus between two ornament lines, and blue lamps as the only colour
 - The gold panel opens; "PEDWAR" sits between the two gold lines; no text cut off or overlapping. Dragged to the
   smallest and the largest size: nothing cut off or blurry.
 - Mode, Key track, Link, the bus grid lamps and Quality all respond and light blue; 8x reads "8x heavy" in gold.
-- Setting α's bus lamp to anim moves the dotted rings. (The strike lamps' flash on each note was not specifically
-  confirmed.)
+- Setting α's bus lamp to anim moves the dotted rings. The strike lamps' flash on each note is there but very subtle
+  (the lamp is already lit while strike is on); a stronger flash is a possible small follow-up.
 - Logic's CPU meter: about 5-10% with PEDWAR alone, very little difference with the window open or closed.
 - PEDWAR Synth opens with the same gold panel.
 
