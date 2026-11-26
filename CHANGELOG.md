@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.2 — the gold panel (built 2026-11-26; cosmetic only; waiting for its Logic test)
+
+- The panel in the gold "sections" look of Anamnesis 0.3.1 (its colours, fonts, knob, switch and menu drawing, frames
+  with titles set into the top line, flow lines with nodes and hops, and the stored-picture backdrop). Approved as a
+  mock-up drawn by this code on 2026-11-26.
+- Sections: each filter (input and Mode, then Drive, Tuning, Resonance · FM, Stereo morph, Output); master: Preset,
+  Pitch, Modulation, Mix. Flow lines: the four outputs run into Mix; the link lines run from leader to follower.
+- Moved on the panel (not in the control list): Key track under Coarse; Preset and Quality from the top bar into the
+  master column; Mix to the bottom of it; Scale on its own full-width row (long scale names were squeezed before) and
+  Key below it. "Double Harmonic (Byzantine)" shows as "Double Harmonic" on the panel only.
+- On/off switches are lamps; choices are gold pills lit blue; the filter colours are gone (blue lamps are the only
+  colour). "8x heavy" is gold instead of amber, and now also shows on the menu when a project saved at 8x opens.
+- Fonts built in: Space Grotesk, Marcellus, and GFS Didot for the Greek letters (all SIL Open Font License).
+- The window opens at 760 x 726 (was about 780 x 704); still resizable from 90% to 200% by the corner.
+- Unchanged: the 75 controls (ids, order, ranges, menus), the saved settings, the plugin and manufacturer codes, the
+  sound.
+- New checks: the title fits at 90 to 200% (in the drawn pixels too); every text fits its place (over 48,000); the
+  fixed artwork is a stored picture and the 30-times-a-second update is much lighter than drawing the whole panel
+  (about 2 ms against 14 ms at 100%). The Actions run uploads pictures of both panels (panel-pictures).
+
 ## 0.3.1 — milestone 3 preset level fix (built 2026-11-20, run 44845827670; tested in Logic on the M4, works)
 
 - **Logic test (M4, 2026-11-20):** with a drum loop going in, Init peaks at about 0 dB on Logic's meter; Uber Space,

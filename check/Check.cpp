@@ -8,8 +8,12 @@
 //      "Custom".
 //   4. Audio through processBlock: track input, side chain, MIDI strikes and key tracking, the bus layouts Logic uses,
 //      the latency.
-//   5. The panel opens at the draft's proportions, every control is there and live, the modulation rings follow the
+//   5. The panel opens at its proportions, every control is there and live, the modulation rings follow the
 //      LFOs, the Preset and Quality menus, the snapped Coarse readout.
+//      0.3.2 (the gold look): "PEDWAR" fits its title area at every window size (measured, and checked in the drawn
+//      pixels); every text on the panel fits its place (names, titles, every knob's value over its whole range, every
+//      switch and menu entry); the fixed artwork is stored as a picture, and the 30-times-a-second update (the live
+//      areas only) is much lighter than drawing the whole panel.
 //   6. Heavy random automation through the parameters stays finite and bounded.
 //
 // The build workflow runs both programs on every push and fails if any check fails.
@@ -18,7 +22,9 @@
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
 
+#include <chrono>
 #include <cmath>
+#include <functional>
 #include <cstdio>
 #include <random>
 #include <vector>
@@ -568,18 +574,21 @@ static void testMilestone3()
 
 static void testPanel (const juce::File& snapDir)
 {
+    using namespace PdStyle;
     PedwarAudioProcessor proc;
     std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
     CHECK (ed != nullptr, "panel opens");
     if (ed == nullptr) return;
     const double aspect = (double) ed->getWidth() / (double) ed->getHeight();
-    CHECK (std::fabs (aspect - 680.0 / 612.0) < 0.01, "draft proportions (%d x %d)", ed->getWidth(), ed->getHeight());
-    CHECK (ed->getWidth() > 740 && ed->getWidth() < 820, "opens about 780 wide (%d)", ed->getWidth());
+    CHECK (std::fabs (aspect - (double) panelW / (double) panelH) < 0.01, "panel proportions (%d x %d)", ed->getWidth(), ed->getHeight());
+    CHECK (ed->getWidth() == panelW && ed->getHeight() == panelH, "opens at %d x %d", ed->getWidth(), ed->getHeight());
 
-    auto* panel = ed->getChildComponent (0);
+    auto& panelRef = dynamic_cast<PedwarAudioProcessorEditor&> (*ed).getPanel();
+    auto* panel = &panelRef;
     int enabled = 0, dimmed = 0;
     for (auto* c : panel->getChildren())
     {
+        if (c == &panelRef.getBackdrop()) continue;            // the fixed artwork, not a control
         if (c->isEnabled()) ++enabled;
         else
         {
@@ -606,6 +615,23 @@ static void testPanel (const juce::File& snapDir)
         CHECK (preset != nullptr && preset->getNumItems() == proc.getNumPrograms() && preset->getText() == "Init", "Preset menu: %d entries, shows Init",
                preset != nullptr ? preset->getNumItems() : 0);
         CHECK (qual != nullptr && qual->getItemText (2) == "8x heavy" && qual->getText() == "4x", "Quality menu: 2x / 4x / 8x heavy, on 4x");
+        if (qual != nullptr)
+        {
+            setReal (proc, PdParams::quality, 2.0f);
+            CHECK (qual->getText() == "8x heavy", "Quality on 8x: the menu shows \"%s\"", qual->getText().toRawUTF8());
+            setReal (proc, PdParams::quality, 1.0f);
+        }
+        {
+            // a project saved at 8x: the menu shows "8x heavy" when the window opens
+            PedwarAudioProcessor p8;
+            setReal (p8, PdParams::quality, 2.0f);
+            std::unique_ptr<juce::AudioProcessorEditor> e8 (p8.createEditor());
+            juce::ComboBox* q8 = nullptr;
+            for (auto* c : dynamic_cast<PedwarAudioProcessorEditor&> (*e8).getPanel().getChildren())
+                if (auto* cb = dynamic_cast<juce::ComboBox*> (c))
+                    if (cb->getNumItems() == 3 && cb->getItemText (0) == "2x") q8 = cb;
+            CHECK (q8 != nullptr && q8->getText() == "8x heavy", "opened at 8x: the menu shows \"%s\"", q8 != nullptr ? q8->getText().toRawUTF8() : "");
+        }
         if (preset != nullptr)
         {
             preset->setSelectedId (3, juce::sendNotificationSync);      // the second factory preset
@@ -673,6 +699,234 @@ static void testPanel (const juce::File& snapDir)
     }
 }
 
+// ------------------------------------------------------------------------------------------------ 5b. the gold look
+
+// The window sizes the panel is checked at (the corner can be dragged from 90% to 200%).
+static const float kSizes[] = { 0.9f, 1.0f, 1.25f, 1.5f, 2.0f };
+
+static std::unique_ptr<juce::AudioProcessorEditor> editorAt (PedwarAudioProcessor& proc, float s)
+{
+    std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
+    if (ed != nullptr)
+        ed->setSize (juce::roundToInt ((float) PdStyle::panelW * s), juce::roundToInt ((float) PdStyle::panelH * s));
+    return ed;
+}
+
+// "PEDWAR" fits its title area: measured with the panel's own font, and in the drawn pixels at every window size.
+static void testTitle()
+{
+    using namespace PdStyle;
+    const float w = titleWidth();
+    CHECK (w > 60.0f && w <= titleRight - titleLeft, "title width %.1f fits the title area (%.0f)", w, titleRight - titleLeft);
+    std::printf ("title \"PEDWAR\": %.1f of %.0f panel units\n", w, titleRight - titleLeft);
+    for (float s : kSizes)
+    {
+        PedwarAudioProcessor proc;
+        auto ed = editorAt (proc, s);
+        CHECK (ed != nullptr && std::abs (ed->getWidth() - juce::roundToInt (panelW * s)) <= 1, "size %.0f%%: window %d x %d",
+               s * 100.0f, ed != nullptr ? ed->getWidth() : 0, ed != nullptr ? ed->getHeight() : 0);
+        if (ed == nullptr) continue;
+        const float k = (float) ed->getWidth() / (float) panelW;
+        const auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
+        CHECK (img.isValid() && img.getWidth() == ed->getWidth(), "size %.0f%%: the panel draws", s * 100.0f);
+        // in the drawn pixels: the title's gold stays inside its area, and nothing bright sits in the gaps between the
+        // title area and the two ornament lines
+        int spill = 0, inside = 0;
+        for (int y = (int) (8 * k); y < (int) (42 * k); ++y)
+        {
+            for (int x = (int) std::ceil (titleLeft * k); x < (int) (titleRight * k); ++x)
+                if (img.getPixelAt (x, y).getBrightness() > 0.6f) ++inside;
+            for (int x = (int) std::ceil ((ornamentLeftEnd + 1.5f) * k); x < (int) ((titleLeft - 0.5f) * k); ++x)
+                if (img.getPixelAt (x, y).getBrightness() > 0.6f) ++spill;
+            for (int x = (int) std::ceil ((titleRight + 0.5f) * k); x < (int) ((ornamentRightStart - 1.5f) * k); ++x)
+                if (img.getPixelAt (x, y).getBrightness() > 0.6f) ++spill;
+        }
+        CHECK (inside > 60 && spill == 0, "size %.0f%%: title drawn inside its area (%d lit pixels inside, %d outside)", s * 100.0f, inside, spill);
+    }
+}
+
+// Every text on the panel fits its place.
+static void testTextsFit()
+{
+    using namespace PdStyle;
+    PedwarAudioProcessor proc;
+    std::unique_ptr<juce::AudioProcessorEditor> edBase (proc.createEditor());
+    auto& panel = dynamic_cast<PedwarAudioProcessorEditor&> (*edBase).getPanel();
+    int tooWide = 0, texts = 0;
+    float worst = 0.0f;                        // the tightest fit seen (width / room)
+    auto fits = [&] (const juce::String& what, float width, float room)
+    {
+        ++texts;
+        worst = std::max (worst, width / room);
+        if (width > room)
+        {
+            if (++tooWide <= 30) std::printf ("  too wide: \"%s\" %.1f of %.1f\n", what.toRawUTF8(), width, room);
+            return false;
+        }
+        return true;
+    };
+    for (const auto& t : panel.fixedTexts()) fits (t.text, t.width, t.room);
+    for (auto* c : panel.getChildren())
+    {
+        if (auto* k = dynamic_cast<PdKnob*> (c))
+        {
+            // the value over the knob's whole range (with Pitch Snap off and on, Morph ends both ways)
+            for (float snap : { 0.0f, 1.0f })
+                for (float ends : { 0.0f, 1.0f })
+                {
+                    setReal (proc, PdParams::pitchSnap, snap);
+                    for (int f = 0; f < PdParams::numFilters; ++f) setReal (proc, PdParams::id (f, PdParams::MorphEnds), ends);
+                    for (int i = 0; i <= 400; ++i)
+                    {
+                        const auto t = k->readoutAt ((float) i / 400.0f);
+                        fits (k->getComponentID() + ": " + t, widthOf (t, valueFont()), k->readoutRoom());
+                    }
+                }
+            setReal (proc, PdParams::pitchSnap, 0.0f);
+        }
+        else if (auto* sw = dynamic_cast<PdSegments*> (c))
+        {
+            const int n = sw->getKind() == PdSegments::Kind::Option ? 1 : sw->getLabels().size();
+            for (int i = 0; i < n; ++i)
+                fits (sw->getComponentID() + ": " + sw->getLabels()[i], sw->neededWidth (i), sw->roomFor (i));
+        }
+        else if (auto* cb = dynamic_cast<juce::ComboBox*> (c))
+        {
+            const float room = (float) cb->getWidth() - 8.0f - 18.0f;
+            for (int i = 0; i < cb->getNumItems(); ++i)
+                fits (cb->getComponentID() + ": " + cb->getItemText (i), widthOf (cb->getItemText (i), menuFont()), room);
+            if (cb->getComponentID() == "preset") fits ("Custom", widthOf ("Custom", menuFont()), room);
+        }
+        else if (auto* fd = dynamic_cast<PdFader*> (c))
+        {
+            for (const char* t : { "-inf", "+6", "-60", "-12" }) fits (t, widthOf (t, valueFont()), PdFader::kW);
+            juce::ignoreUnused (fd);
+        }
+        else if (auto* l = dynamic_cast<PdStrikeLight*> (c))
+            fits ("STRIKE", PdSegments::optionWidth ("STRIKE"), (float) l->getWidth());
+        else if (auto* gr = dynamic_cast<PdBusGrid*> (c))
+            for (const char* t : { "WIDTH", "FM", "ANIM" })
+                fits (t, widthOf (t, labelFont()), PdBusGrid::rowLabelRoom ((float) gr->getWidth()));
+    }
+    for (const char* t : { "TRACK IN", "SIDE CHAIN" })
+        fits (t, 16.0f + widthOf (t, labelFont()), 134.0f - 16.0f);
+    CHECK (tooWide == 0 && texts > 2000, "every text on the panel fits its place (%d texts, %d too wide, tightest %.0f%% of its room)",
+           texts, tooWide, worst * 100.0f);
+    std::printf ("panel texts: %d checked, tightest fit %.0f%% of its room\n", texts, worst * 100.0f);
+}
+
+// The fixed artwork is drawn once into a stored picture, and 30 times a second only the live areas are redrawn.
+// Measured here against drawing the whole panel every time (what 0.3.1 did), with the modulation rings showing.
+static void testDrawingCost()
+{
+    PedwarAudioProcessor proc;
+    setReal (proc, PdParams::busIds[0], 2.0f);
+    setReal (proc, PdParams::busIds[2], 2.0f);
+    setReal (proc, PdParams::id (0, PdParams::FmAmt), 0.5f);
+    setReal (proc, PdParams::lfoRate, 5.0f);
+    proc.setRateAndBufferSizeDetails (48000.0, 512);
+    proc.prepareToPlay (48000.0, 512);
+    juce::AudioBuffer<float> buf (juce::jmax (2, proc.getTotalNumInputChannels()), 512);
+    juce::MidiBuffer midi;
+    for (int b = 0; b < 40; ++b) { buf.clear(); proc.processBlock (buf, midi); }
+    for (float s : { 1.0f, 2.0f })
+    {
+        auto edBase = editorAt (proc, s);
+        auto& panel = dynamic_cast<PedwarAudioProcessorEditor&> (*edBase).getPanel();
+        const float k = (float) edBase->getWidth() / (float) PdStyle::panelW;
+        std::function<void (juce::Component&)> refresh = [&] (juce::Component& c)
+        {
+            if (auto* kn = dynamic_cast<PdKnob*> (&c)) kn->refreshModulation();
+            for (auto* ch : c.getChildren()) refresh (*ch);
+        };
+        refresh (panel);
+        CHECK (panel.getBackdrop().getCachedComponentImage() != nullptr, "the panel's fixed artwork is stored as a picture");
+        juce::Image img (juce::Image::ARGB, edBase->getWidth(), edBase->getHeight(), true);
+        juce::RectangleList<int> live;
+        for (const auto& a : panel.liveAreas())
+            live.add (a.toFloat().transformedBy (juce::AffineTransform::scale (k)).getSmallestIntegerContainer().expanded (1));
+        auto timeIt = [&] (bool liveOnly, int n)
+        {
+            const auto t0 = std::chrono::steady_clock::now();
+            for (int i = 0; i < n; ++i)
+            {
+                juce::Graphics g (img);
+                if (liveOnly) g.reduceClipRegion (live);
+                edBase->paintEntireComponent (g, true);
+            }
+            return std::chrono::duration<double, std::milli> (std::chrono::steady_clock::now() - t0).count() / n;
+        };
+        auto& backdrop = panel.getBackdrop();
+        backdrop.setBufferedToImage (false);
+        timeIt (false, 3);
+        const double whole = timeIt (false, 20);
+        backdrop.setBufferedToImage (true);
+        timeIt (true, 3);
+        const double tick = timeIt (true, 60);
+        std::printf ("drawing at %.0f%%: live update %.2f ms, whole panel every time %.2f ms\n", s * 100.0f, tick, whole);
+        CHECK (tick < 0.6 * whole, "size %.0f%%: the live update (%.2f ms) is much lighter than drawing the whole panel (%.2f ms)", s * 100.0f, tick, whole);
+        CHECK (tick < 12.0, "size %.0f%%: the live update takes %.2f ms (limit 12 ms; one update every 33 ms)", s * 100.0f, tick);
+    }
+}
+
+// Pictures of the panel (--snapshot <folder>): first load at 100%, the smallest and largest window sizes, and one
+// with many switches changed (links on, über, Pitch Snap and a scale, 8x, other modes and taps) and rings showing.
+static void writeSnapshots (const juce::File& dir)
+{
+    dir.createDirectory();
+    const juce::String tag = PedwarAudioProcessor::isSynth ? "synth-" : "";
+    auto shoot = [&] (PedwarAudioProcessor& proc, float s, const juce::String& name)
+    {
+        auto ed = editorAt (proc, s);
+        const auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
+        auto f = dir.getChildFile ("panel-" + tag + name + ".png");
+        f.deleteFile();
+        juce::FileOutputStream os (f);
+        juce::PNGImageFormat().writeImageToStream (img, os);
+        std::printf ("wrote %s\n", f.getFullPathName().toRawUTF8());
+    };
+    {
+        PedwarAudioProcessor proc;
+        shoot (proc, 1.0f, "first-load-100");
+        shoot (proc, 0.9f, "size-90");
+        shoot (proc, 2.0f, "size-200");
+    }
+    {
+        PedwarAudioProcessor proc;
+        using namespace PdParams;
+        setReal (proc, linkAB, 1.0f);
+        setReal (proc, linkGD, 1.0f);
+        setReal (proc, stereoMode, 1.0f);
+        setReal (proc, pitchSnap, 1.0f);
+        setReal (proc, pitchScale, 3.0f);
+        setReal (proc, pitchKey, 9.0f);
+        setReal (proc, quality, 2.0f);
+        setReal (proc, pitchSplit, 1.0f);
+        setReal (proc, masterLimit, 1.0f);
+        setReal (proc, id (1, Mode), 1.0f);
+        setReal (proc, id (2, Mode), 2.0f);
+        setReal (proc, id (0, InLimit), 1.0f);
+        setReal (proc, id (3, Tap), 2.0f);
+        setReal (proc, id (1, Strike), 0.0f);
+        setReal (proc, id (2, KeyTrack), 0.0f);
+        setReal (proc, id (3, OutLimit), 1.0f);
+        setReal (proc, id (2, MorphEnds), 1.0f);
+        setReal (proc, busIds[0], 2.0f);
+        setReal (proc, busIds[1], 1.0f);
+        setReal (proc, busIds[2], 2.0f);
+        setReal (proc, id (0, FmAmt), 0.5f);
+        setReal (proc, id (2, FmAmt), -0.4f);
+        setReal (proc, lfoRate, 3.0f);
+        setReal (proc, id (0, Coarse), 270.0f);
+        proc.setRateAndBufferSizeDetails (48000.0, 512);
+        proc.prepareToPlay (48000.0, 512);
+        juce::AudioBuffer<float> buf (juce::jmax (2, proc.getTotalNumInputChannels()), 512);
+        juce::MidiBuffer midi;
+        for (int b = 0; b < 40; ++b) { buf.clear(); proc.processBlock (buf, midi); }
+        shoot (proc, 1.0f, "many-switches-100");
+    }
+}
+
 // ------------------------------------------------------------------------------------------------ 6. automation
 
 static void testAutomation()
@@ -720,6 +974,10 @@ int main (int argc, char** argv)
     testMilestone2();
     testMilestone3();
     testPanel (snapDir);
+    testTitle();
+    testTextsFit();
+    testDrawingCost();
+    if (snapDir != juce::File()) writeSnapshots (snapDir);
     testAutomation();
     std::printf ("plugin checks (%s): %d checks, %d failed\n", kWhich, checks, failures);
     return failures == 0 ? 0 : 1;

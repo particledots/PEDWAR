@@ -6,9 +6,39 @@ ceithir (a quad state-variable filter / resonator). It is not a copy, contains n
 affiliated with Instruō. The ceithir is an analog module with no published firmware; its manual was used only to
 understand what the controls do. "Pedwar" is Welsh for "four".
 
-Status: **finished. All three milestones are built and tested in Logic.** Version 0.3.1 (run 44845827670) is the
-current build. Milestones 1, 2 (0.2.0) and 3 (0.3.0, with the 0.3.1 preset level fix) were tested in Logic on the M4
+Status: **finished. All three milestones are built and tested in Logic.** Version 0.3.2 (the gold panel, cosmetic
+only) is the current build, waiting for its Logic test; 0.3.1 (run 44845827670) is the last build tested in Logic. Milestones 1, 2 (0.2.0) and 3 (0.3.0, with the 0.3.1 preset level fix) were tested in Logic on the M4
 Mac mini (macOS Tahoe, Logic 11.2.2) and the Intel Mac (macOS 12.7.8, Logic 10.7.8) on 2026-11-20.
+
+## The panel (0.3.2)
+
+The gold "sections" look of the particledots plugins (the same code and look as Anamnesis 0.3.1): a black panel with
+gold hairline frames grouping the controls into sections, cream knob caps inside gold range arcs, spaced capitals, the
+title in Marcellus between two ornament lines, and blue lamps as the only colour (they mean "on" or "chosen").
+
+- **Each filter** (α ALPHA, β BETA, γ GAMMA, δ DELTA): its input (track in / side chain, the lamp lit while it takes
+  the side chain) and Mode, then **Drive** (Gain, In limit), **Tuning** (Coarse, Fine, Key track), **Resonance · FM**
+  (Q, FM amt), **Stereo morph** (Morph, Width, Ends) and **Output** (the tap menu, Out limit, Strike).
+- **Master**: **Preset** (Preset and Quality menus), **Pitch** (Offset, Pitch γδ, Snap, Scale, Key), **Modulation**
+  (Rate, the bus grid) and **Mix** (the four levels, Stereo, Master limit).
+- **Flow lines**, only where they show something true: the four filter outputs leave their frames, join and run into
+  Mix (hopping over the link lines), and the link lines run from leader to follower (α to β, δ to γ) through their
+  Link lamps.
+- On/off switches are a lamp with its name; choices are a gold pill with the chosen part lit blue. The modulation rings
+  are dotted cream. "8x heavy" shows in gold on the Quality menu. One scale is shortened on the panel only, "Double
+  Harmonic (Byzantine)" shows as "Double Harmonic" (Logic and saved projects keep the full name).
+- The Greek letters are drawn in GFS Didot (Space Grotesk has none). All three fonts are built in and free (SIL Open
+  Font License, in `plugin/Fonts/`).
+- The window opens at 760 x 726 (0.3.1: about 780 x 700) and keeps its proportions when you drag the corner (90% to
+  200%). Only the look changed: no control was renamed, reordered, re-ranged or removed, the plugin and manufacturer
+  codes are the same, and saved projects open as before.
+- **Drawing**: the fixed artwork is drawn once into a stored picture (again only when the window opens or changes
+  size); 30 times a second only the modulation rings, the strike lamps and the input lines are redrawn. The check
+  measures this at about 2 ms per update at 100% against about 14 ms for drawing the whole panel.
+- **Checked on every build** (PedwarCheck): "PEDWAR" fits its title area at 90, 100, 125, 150 and 200% (also in the
+  drawn pixels); every text fits its place (names, titles, every knob's value over its whole range, every switch and
+  menu entry, over 48,000 texts); the update is much lighter than drawing the whole panel. The Actions run uploads
+  pictures of both panels (**panel-pictures**).
 
 ## Milestone 3 Logic test results (2026-11-20)
 
@@ -173,10 +203,7 @@ Signals inside are plus/minus 1 at full scale.
   filters hear it as "track in". Under each filter's name, "track in" or "side chain" says what it is hearing; when
   it is the side chain, the label turns the filter's colour with a dot in front. In PEDWAR Synth there is no track audio: the side chain (if one is
   chosen) feeds all four.
-- **The panel** is the approved draft, every control live. The window opens at about 780 x 700
-  and keeps the draft's proportions when you drag the corner. Two small changes from the draft: the bus grid's dots sit
-  8 units left (so the row names do not overlap δ), and the Morph ends switch sits 3 units lower with the Morph and
-  Width knobs 3 higher (so the Morph readout is not hidden).
+- **The panel**: every control live, in the gold look since 0.3.2 (see "The panel (0.3.2)" above).
 - **Clean under automation.** Everything runs at 4x the project's sample rate (2x or 8x with the Quality menu) with
   steep filters on the way in and out,
   and the shapers and limiters are band-limited (antiderivative anti-aliasing). The core is a "zero-delay feedback"
@@ -200,7 +227,7 @@ Signals inside are plus/minus 1 at full scale.
 |---|---|
 | `engine/` | The audio engine. Plain C++, no plugin code: the state-variable core, Morph and the width all-pass, the LFOs and bus grid, Link, the shapers and limiters, up- and down-sampling at 2x / 4x / 8x, sum / über, Pitch Snap (`Pitch.h`, `Scales.h`) and the factory presets (`Presets.h`). Reusable for later plugins. |
 | `plugin/` | The plugin wrappers (both plugins, from the same files): what Logic sees, the list of controls (`Parameters`), and the panel (`PluginEditor`, `Controls`, `Style`). |
-| `check/` | `PedwarCheck` and `PedwarSynthCheck`: console programs that test the plugin layer (controls, saved settings, audio, MIDI, side chain, panel) without a host. |
+| `check/` | `PedwarCheck` and `PedwarSynthCheck`: console programs that test the plugin layer (controls, saved settings, audio, MIDI, side chain, panel) without a host. `--snapshot <folder>` writes pictures of the panel. |
 | `tools/install/` | The same installer as the other particledots plugins (unchanged). |
 | `.github/workflows/` | The automatic build. |
 

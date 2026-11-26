@@ -8,7 +8,7 @@ if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 endif()
 
-project(Pedwar VERSION 0.3.1 LANGUAGES C CXX)
+project(Pedwar VERSION 0.3.2 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -35,6 +35,17 @@ if(PEDWAR_BUILD_PLUGIN OR PEDWAR_BUILD_CHECK)
         GIT_SHALLOW    TRUE
     )
     FetchContent_MakeAvailable(JUCE)
+    # The panel's fonts (built into the plugin so it looks and measures the same on every Mac and in the check):
+    # Space Grotesk (text), Marcellus (the title), GFS Didot's Greek letters (alpha .. delta). All SIL Open Font License.
+    juce_add_binary_data(PedwarFonts
+        HEADER_NAME PdFontData.h
+        NAMESPACE   PdFontData
+        SOURCES
+            plugin/Fonts/SpaceGrotesk-Regular.ttf
+            plugin/Fonts/SpaceGrotesk-Medium.ttf
+            plugin/Fonts/Marcellus-Regular.ttf
+            plugin/Fonts/GFSDidot-Greek.ttf
+    )
     if(PEDWAR_BUILD_PLUGIN)
         add_subdirectory(plugin)
     endif()

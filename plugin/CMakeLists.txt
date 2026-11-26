@@ -30,6 +30,7 @@ function(pedwar_finish target is_synth)
     target_link_libraries(${target}
         PRIVATE
             pedwar_engine
+            PedwarFonts
             juce::juce_audio_processors
             juce::juce_gui_basics
         PUBLIC

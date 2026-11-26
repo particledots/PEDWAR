@@ -1,6 +1,11 @@
-// The PEDWAR panel. Laid out at 680 x 612 units exactly like the approved draft (pedwar-gui-draft.html, 2026-11-19)
-// and scaled to the window (drag the corner to resize; the shape stays the same).
-// Every control is live (milestone 3: all controls of the brief).
+// The PEDWAR panel, 0.3.2: the gold "sections" look. Laid out at 760 x 726 units and scaled to the window (drag the
+// corner to resize; the shape stays the same).
+//
+// Drawing is split in two so the panel stays light to draw:
+//   - the fixed artwork (frames, titles, names, knob arcs, the flow lines) is a child component drawn once into a
+//     stored picture (redrawn only when the window opens or changes size);
+//   - 30 times a second only what moves is redrawn: the modulation rings on Coarse, Q and Morph, the strike lamps and
+//     the "track in / side chain" lines (and a control when its own setting changes).
 
 #pragma once
 
@@ -13,16 +18,32 @@ public:
     explicit PedwarPanel (PedwarAudioProcessor&);
     ~PedwarPanel() override;
 
-    void paint (juce::Graphics&) override;
+    void paintOverChildren (juce::Graphics&) override;
+
+    // For the check program: the fixed artwork layer, the areas redrawn 30 times a second (panel units), and the
+    // panel's texts with the room each has (panel units), so it can check that every text fits.
+    juce::Component& getBackdrop() { return backdrop; }
+    juce::Array<juce::Rectangle<int>> liveAreas() const;
+    struct FixedText { juce::String text; float width, room; };
+    std::vector<FixedText> fixedTexts() const;
+
+    static constexpr int kLiveMilestone = 3;     // controls of this milestone and earlier work (all of them now)
 
 private:
+    struct Backdrop : public juce::Component
+    {
+        explicit Backdrop (PedwarPanel& p) : owner (p) {}
+        void paint (juce::Graphics& g) override { owner.paintBackdrop (g); }
+        PedwarPanel& owner;
+    };
+
     void timerCallback() override;
-    PdKnob& knob (int filter, int slot, float cx, float cy, float r, const juce::String& label, int milestone,
+    void paintBackdrop (juce::Graphics&);
+    PdKnob& knob (const char* pid, float cx, float cy, float r, const juce::String& label, float room,
                   PdKnob::Readout ro = nullptr);
-    PdKnob& knob (const char* pid, juce::Colour c, float cx, float cy, float r, const juce::String& label, int milestone);
-    PdSegments& segs (const char* pid, juce::StringArray labels, juce::Colour c, int x, int y, int w,
-                      const juce::String& caption, int milestone, juce::Array<float> values = {});
-    PdMenu& menu (const char* pid, int x, int y, int w, int milestone, const juce::StringArray& shown = {});
+    PdSegments& segs (const char* pid, juce::StringArray labels, PdSegments::Kind, juce::Rectangle<int> r,
+                      juce::Array<float> values = {});
+    PdMenu& menu (const char* pid, juce::Rectangle<int> r, const juce::StringArray& shown = {});
     void later (juce::Component&, int milestone);
 
     void updatePresetMenu();
@@ -31,7 +52,9 @@ private:
 
     PedwarAudioProcessor& proc;
     PdLookAndFeel lnf;
+    Backdrop backdrop { *this };
     std::vector<std::unique_ptr<juce::Component>> owned;
+    std::vector<PdKnob*> knobs;
     PdStrikeLight* lights[4] {};
     std::vector<PdKnob*> modKnobs;           // Coarse, Q and Morph of each filter: they show modulation rings
     int lastStrikes[4] {};
@@ -48,6 +71,7 @@ public:
     explicit PedwarAudioProcessorEditor (PedwarAudioProcessor&);
     void paint (juce::Graphics&) override;
     void resized() override;
+    PedwarPanel& getPanel() { return panel; }
 
 private:
     PedwarPanel panel;

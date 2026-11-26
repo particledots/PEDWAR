@@ -48,7 +48,7 @@ jobs:
             && cmake --build build-check --target PedwarCheck PedwarSynthCheck -j 4 \
             && for name in PedwarCheck PedwarSynthCheck; do \
                  BIN=$(find build-check -type f -name "$name" -perm -u+x | head -n 1); \
-                 echo "running $BIN"; "$BIN" || exit 1; \
+                 echo "running $BIN"; "$BIN" --snapshot panel-pictures || exit 1; \
                done ) > plugin-check.log 2>&1
           code=$?
           tail -n 30 plugin-check.log
@@ -58,6 +58,16 @@ jobs:
             exit 1
           fi
           grep -h 'plugin checks' plugin-check.log | while IFS= read -r line; do echo "::notice::PLUGIN-CHECK: $line"; done
+          grep -hE 'title "PEDWAR"|panel texts|drawing at' plugin-check.log | while IFS= read -r line; do echo "::notice::PANEL: $line"; done
+
+      # Pictures of both panels, drawn by the check programs (first load, 90% and 200% windows, many switches changed).
+      - name: Upload the panel pictures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panel-pictures
+          path: panel-pictures
+          if-no-files-found: ignore
 
   build-macos:
     name: Build AU + VST3 (macOS)

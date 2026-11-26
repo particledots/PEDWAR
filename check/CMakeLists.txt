@@ -26,6 +26,7 @@ function(pedwar_check target is_synth plugin_name)
     target_link_libraries(${target}
         PRIVATE
             pedwar_engine
+            PedwarFonts
             juce::juce_audio_processors
             juce::juce_gui_basics
         PUBLIC
